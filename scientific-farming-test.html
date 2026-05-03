@@ -1668,24 +1668,18 @@ self.addEventListener('fetch', e=>{
 
       <!-- HISTORY TAB -->
       <div id="plt-tab-hist" style="display:none;">
-        <div class="card">
-          <div class="row-space">
-            <h3 style="margin:0">વાવેતર ઇતિહાસ</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <div style="display:flex;gap:8px;">
             <select id="plt-filter-farm" style="font-size:13px;padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--radius);color:var(--text);background:var(--bg);" onchange="renderPlantationHistory()"><option value="">બધા ખેતર</option></select>
+            <select id="plt-hist-filter-status" style="font-size:13px;padding:5px 8px;border:0.5px solid var(--border2);border-radius:var(--radius);color:var(--text);background:var(--bg);" onchange="renderPlantationHistory()">
+              <option value="">બધા</option>
+              <option value="harvested">✓ લણણી</option>
+              <option value="failed">✕ નિષ્ફળ</option>
+            </select>
           </div>
-          <hr class="divider"/>
-          <div class="tbl-wrap">
-            <table>
-              <thead><tr>
-                <th style="width:11%">ખેતર</th><th style="width:8%">લેન</th><th style="width:12%">પાક/જાત</th>
-                <th style="width:9%">વાવ. (Sow)</th><th style="width:9%">અન્ય (End)</th>
-                <th style="width:7%">વ. (Area)</th><th style="width:8%">સ્થ. (Status)</th>
-                <th style="width:9%">ઉ.કિ. (kg)</th><th style="width:10%">ચોખ્ખો નફો/ખોટ (P&L)</th><th style="width:10%">વ. ખેડ (Setup)</th><th style="width:7%"></th>
-              </tr></thead>
-              <tbody id="plt-hist-body"><tr><td colspan="11" class="empty-row">કોઈ ઇતિહાસ નથી</td></tr></tbody>
-            </table>
-          </div>
+          <div id="plt-hist-count" style="font-size:12px;color:var(--text2);"></div>
         </div>
+        <div id="plt-hist-cards"><div class="loading">કોઈ ઇતિહાસ નથી</div></div>
       </div><!-- end plt-tab-hist -->
     </div><!-- end plantation page -->
 
@@ -5582,7 +5576,7 @@ const PLT_QL_LABELS = {
 
 function getPltQlFormHtml(type){
   const lbl=(t,req)=>`<label style="font-size:12px;font-weight:600;color:var(--text2);margin-bottom:4px;display:block;">${t}${req?' <span style="color:var(--red);">*</span>':''}</label>`;
-  const inp=(id,ph,extra='')=>`<input id="${id}" type="number" placeholder="${ph}" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;" ${extra}/>`;
+  const inp=(id,ph,extra='',type2='number')=>`<input id="${id}" type="${type2}" placeholder="${ph}" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:14px;" ${extra}/>`;
   const sel=(id,opts,extra='')=>`<select id="${id}" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);" ${extra}>${opts}</select>`;
   const row2=(a,b)=>`<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">${a}${b}</div>`;
   const fg=(content)=>`<div style="margin-bottom:10px;">${content}</div>`;
@@ -5591,6 +5585,7 @@ function getPltQlFormHtml(type){
     .map(p=>`<option value="${p.id}">${p.name}${p.company?' — '+p.company:''}</option>`).join('');
   const pestOpts=D.products.filter(p=>['pesticide','herbicide','fungicide'].includes(p.cat)&&p.status!=='inactive')
     .map(p=>`<option value="${p.id}">${p.name}${p.company?' — '+p.company:''}</option>`).join('');
+  const vendorOpts='<option value="">-- વેપારી --</option>'+D.vendors.map(v=>`<option value="${v.id}">${v.name}${v.company?' — '+v.company:''}</option>`).join('');
 
   const units=type==='pesticide'
     ?'<option>ml</option><option>L</option><option>g</option><option>kg</option>'
@@ -5603,43 +5598,72 @@ function getPltQlFormHtml(type){
 
   const pay=`<div style="margin-bottom:10px;">
     ${lbl('ચૂકવણી',false)}
-    ${sel('plt-ql-pay','<option value="paid">✅ પૂરું ભર્યું</option><option value="partial">⚠️ અંશત: ભર્યું</option><option value="pending">⏳ હજી બાકી</option>','onchange="togglePltQlPartial()"')}
+    ${sel('plt-ql-pay','<option value="paid">✅ પૂરેપૂરી ચુકવણી</option><option value="partial">⚠️ અંશતઃ ચુકવણી</option><option value="pending">⏳ બાકી ચુકવણી</option>','onchange="togglePltQlPartial()"')}
   </div>
   <div id="plt-ql-partial-row" style="display:none;margin-bottom:10px;padding:10px;background:var(--amber-light);border-radius:8px;">
     ${lbl('ભરેલ રકમ ₹',true)}${inp('plt-ql-paid-amt','0')}
   </div>`;
 
-  const note=`<div style="margin-bottom:4px;">${lbl('નોંધ',false)}<input id="plt-ql-note" placeholder="વધારાની નોંધ..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`;
+  // Vendor + Bill row (shared)
+  const vendorBill=`
+  ${fg(`${lbl('વેપારી',false)}<div style="display:flex;gap:6px;">
+    <select id="plt-ql-vendor" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">${vendorOpts}</select>
+    <button class="btn" style="width:auto;padding:10px 12px;margin:0;font-size:12px;flex-shrink:0;" onclick="openInlineVendor('plt-ql-vendor')">+ નવો</button>
+  </div>`)}
+  ${fg(`${lbl('બેચ/બિલ નંબર',false)}${inp('plt-ql-batch','INV / ર. ન.','','text')}`)}`;
+
+  // Photo square (shared)
+  const photo=`<div style="margin-bottom:10px;">
+    ${lbl('ફોટો',false)}
+    <div style="display:flex;gap:10px;align-items:flex-start;">
+      <div id="plt-ql-photo-wrap" style="width:100px;height:100px;flex-shrink:0;border-radius:8px;overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('plt-ql-photo-preview')">
+        <img id="plt-ql-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+        <span id="plt-ql-photo-placeholder" style="font-size:26px;color:var(--text3);">📷</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <button class="btn" style="width:auto;padding:6px 12px;margin:0;font-size:12px;" onclick="openCamera('plt-ql-photo-preview')">📷 કેમેરા</button>
+        <button class="btn" style="width:auto;padding:6px 12px;margin:0;font-size:12px;" onclick="openFileUpload('plt-ql-photo-preview')">📁 ગેલ.</button>
+        <button id="plt-ql-photo-del" onclick="_clearFormPhoto('plt-ql')" style="display:none;padding:5px 10px;border-radius:8px;border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર</button>
+      </div>
+    </div>
+    <input type="hidden" id="plt-ql-photo-data"/>
+    <span id="plt-ql-photo-status" style="font-size:10px;color:var(--green-dark);"></span>
+  </div>`;
+
+  const note=`<div style="margin-bottom:10px;">${lbl('નોંધ',false)}${inp('plt-ql-note','વધારાની નોંધ...','','text')}</div>`;
 
   if(type==='fertilisation') return `
     <div style="margin-bottom:10px;">${lbl('ઉત્પાદ',true)}
       <div style="display:flex;gap:8px;">
         <select id="plt-ql-product" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">
-          <option value="">-- ઉત્પાદન પસંદ કરો --</option>${fertOpts}
+          <option value="">-- ઉત્પાદ પ. --</option>${fertOpts}
         </select>
         <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct('plt-ql-product')">+ નવો</button>
       </div>
-    </div>${qtyTotal}${pay}${note}`;
+    </div>${qtyTotal}${vendorBill}${pay}${note}${photo}`;
 
   if(type==='pesticide') return `
     <div style="margin-bottom:10px;">${lbl('ઉત્પાદ',true)}
       <div style="display:flex;gap:8px;">
         <select id="plt-ql-product" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">
-          <option value="">-- ઉત્પાદન પસંદ કરો --</option>${pestOpts}
+          <option value="">-- ઉત્પાદ પ. --</option>${pestOpts}
         </select>
         <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct('plt-ql-product')">+ નવો</button>
       </div>
-    </div>${qtyTotal}${pay}${note}`;
+    </div>
+    ${qtyTotal}
+    ${fg(`${lbl('Target (જીવાત/રોગ)',false)}${inp('plt-ql-target','જીવાત, ફૂગ...','','text')}`)}
+    ${vendorBill}${pay}${note}${photo}`;
 
   if(type==='irrigation') return `
     ${row2(
       `<div>${lbl('પ્રકાર',false)}${sel('plt-ql-irr-type','<option>💧 ટ. (ડ્રિપ)</option><option>🌀 ટ્યુબવેલ</option><option>🌊 નહેર</option><option>🚿 Spr.</option><option>🪣 હાથથી</option>')}</div>`,
-      `<div>${lbl('ખેડ ₹',false)}${inp('plt-ql-total','0')}</div>`
+      `<div>${lbl('ખર્ચ ₹',false)}${inp('plt-ql-total','0')}</div>`
     )}
     ${row2(
       `<div>${lbl('કલાક',false)}${inp('plt-ql-irr-dur','3','step="0.5"')}</div>`,
       `<div>${lbl('સૂચના નં.',false)}${inp('plt-ql-irr-seq','1')}</div>`
-    )}${pay}${note}`;
+    )}${pay}${note}${photo}`;
 
   if(type==='cultivation') return `
     ${row2(
@@ -5649,33 +5673,42 @@ function getPltQlFormHtml(type){
     ${row2(
       `<div>${lbl('મજૂર સં.',false)}${inp('plt-ql-labour','0')}</div>`,
       `<div>${lbl('કલાક',false)}${inp('plt-ql-hours','0')}</div>`
-    )}${pay}${note}`;
+    )}
+    ${fg(`${lbl('વેપારી',false)}<div style="display:flex;gap:6px;"><select id="plt-ql-vendor" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">${vendorOpts}</select><button class="btn" style="width:auto;padding:10px 12px;margin:0;font-size:12px;" onclick="openInlineVendor('plt-ql-vendor')">+ નવો</button></div>`)}
+    ${pay}${note}${photo}`;
 
   if(type==='equipment') return `
     ${row2(
-      `<div>${lbl('સાધન *',true)}<input id="plt-ql-eq-name" placeholder="ટ્રૅક્ટર, Sprayer..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`,
+      `<div>${lbl('સાધન *',true)}${inp('plt-ql-eq-name','ટ્રૅક્ટર, Sprayer...','','text')}</div>`,
       `<div>${lbl('કુ. ₹ *',true)}${inp('plt-ql-total','0')}</div>`
     )}
     ${row2(
       `<div>${lbl('કલાક',false)}${inp('plt-ql-eq-hrs','0')}</div>`,
       `<div>${lbl('ઇંધણ (L)',false)}${inp('plt-ql-eq-fuel','0')}</div>`
-    )}${pay}${note}`;
+    )}
+    ${fg(`${lbl('વેપારી/Operator',false)}<div style="display:flex;gap:6px;"><select id="plt-ql-vendor" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">${vendorOpts}</select><button class="btn" style="width:auto;padding:10px 12px;margin:0;font-size:12px;" onclick="openInlineVendor('plt-ql-vendor')">+ નવો</button></div>`)}
+    ${pay}${note}${photo}`;
 
   if(type==='farmwork') return `
     ${row2(
-      `<div>${lbl('\u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE *',true)}<select id="plt-ql-fw-type" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);"><option>\u0AAE\u0AB2\u0ACD\u0A9A\u0ABF\u0A82\u0A97 (\u0AA2\u0ABE\u0A82\u0A95\u0AB5\u0AC1\u0A82)</option><option>\u0A9F\u0AAA\u0A95 \u0AB8\u0ABF\u0A82\u0A9A\u0ABE\u0A88</option><option>\u0AB5\u0ABE\u0AA1 (\u0A98\u0AC7\u0AB0\u0ABE\u0AB5)</option><option>\u0A9B\u0A82\u0A9F\u0AA3\u0AC0/\u0AAA\u0ABE\u0AA4\u0AB3\u0AC1\u0A82 \u0A95\u0AB0\u0AB5\u0AC1\u0A82</option><option>\u0AAA\u0ABE\u0AB3\u0ABE\u0AA8\u0AC1\u0A82 \u0AB8\u0AAE\u0ABE\u0AB0\u0A95\u0ABE\u0AAE</option><option>\u0A85\u0AA8\u0ACD\u0AAF \u0AAE\u0ABE\u0AB3\u0A96\u0AC1\u0A82</option><option>\u0A85\u0AA8\u0ACD\u0AAF</option></select></div>`,
-      `<div>${lbl('\u0A95\u0AC1\u0AB2 \u20B9 *',true)}${inp('plt-ql-total','0')}</div>`
+      `<div>${lbl('ખેતર કામ *',true)}<select id="plt-ql-fw-type" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);"><option>મલ્ચિંગ (ઢાંકવું)</option><option>ટપક સિંચાઈ</option><option>વાડ (ઘેરાવ)</option><option>છંટણી/પાતળું કરવું</option><option>પાળાનું સમારકામ</option><option>અન્ય માળખું</option><option>અન્ય</option></select></div>`,
+      `<div>${lbl('કુલ ₹ *',true)}${inp('plt-ql-total','0')}</div>`
     )}
     ${row2(
-      `<div>${lbl('\u0AB5\u0ABF\u0AB8\u0ACD\u0AA4\u0ABE\u0AB0 (\u0AB5\u0AC0\u0A98\u0ABE)',false)}${inp('plt-ql-fw-area','0','step="0.5"')}</div>`,
-      `<div>${lbl('\u0AB8\u0ABE\u0AAE\u0A97\u0ACD\u0AB0\u0AC0',false)}<input id="plt-ql-fw-material" placeholder="\u0AAA\u0ACD\u0AB2\u0ABE\u0AB8\u0ACD\u0A9F\u0ABF\u0A95, \u0AB5\u0ABE\u0AAF\u0AB0..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`
-    )}${pay}${note}`;
+      `<div>${lbl('વિસ્તાર (વીઘા)',false)}${inp('plt-ql-fw-area','0','step="0.5"')}</div>`,
+      `<div>${lbl('સામગ્રી',false)}${inp('plt-ql-fw-material','પ્લાસ્ટિક, વાયર...','','text')}</div>`
+    )}
+    ${fg(`${lbl('વેપારી',false)}<div style="display:flex;gap:6px;"><select id="plt-ql-vendor" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">${vendorOpts}</select><button class="btn" style="width:auto;padding:10px 12px;margin:0;font-size:12px;" onclick="openInlineVendor('plt-ql-vendor')">+ નવો</button></div>`)}
+    ${pay}${note}${photo}`;
+
   // other
   return `
     ${row2(
-      `<div>${lbl('વિગત *',true)}<input id="plt-ql-act" placeholder="..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`,
+      `<div>${lbl('વિગત *',true)}${inp('plt-ql-act','...','','text')}</div>`,
       `<div>${lbl('કુલ ₹ *',true)}${inp('plt-ql-total','0')}</div>`
-    )}${pay}${note}`;
+    )}
+    ${fg(`${lbl('વેપારી',false)}<div style="display:flex;gap:6px;"><select id="plt-ql-vendor" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">${vendorOpts}</select><button class="btn" style="width:auto;padding:10px 12px;margin:0;font-size:12px;" onclick="openInlineVendor('plt-ql-vendor')">+ નવો</button></div>`)}
+    ${pay}${note}${photo}`;
 }
 
 function openPltQuickLog(type){
@@ -5741,7 +5774,9 @@ function savePltQuickLog(){
   const gf=id=>parseFloat(g(id))||0;
   const total=gf('plt-ql-total');
   const base={id:'fl_'+Date.now(),module:'crop',type,pltId,updated_at:new Date().toISOString(),
-    cropName:plt.crop,farm:plt.farm,lane:plt.lane||'',date,note:g('plt-ql-note'),addedOn:date};
+    cropName:plt.crop,farm:plt.farm,lane:plt.lane||'',date,note:g('plt-ql-note'),addedOn:date,
+    vendorId:g('plt-ql-vendor'),batch:g('plt-ql-batch'),
+    photoData:g('plt-ql-photo-data')};
   let entry={};
   if(type==='fertilisation'||type==='pesticide'){
     const prodId=g('plt-ql-product');
@@ -5752,7 +5787,7 @@ function savePltQuickLog(){
     const _pay=g('plt-ql-pay')||'paid';
     const _paid=_pay==='paid'?total:_pay==='partial'?gf('plt-ql-paid-amt'):0;
     entry={...base,product:prod?prod.name:prodId,productId:prodId,
-      qty,unit:g('plt-ql-unit'),amount:total,
+      qty,unit:g('plt-ql-unit'),amount:total,target:type==='pesticide'?g('plt-ql-target'):'',
       rate:qty&&total?total/qty:0,kind:'expense',paystatus:_pay,paidAmt:_paid};
   } else if(type==='irrigation'){
     const _irrP=g('plt-ql-pay')||'paid';
@@ -8081,48 +8116,223 @@ function deletePhotoFromLog(logId){
 
 
 function renderPlantationHistory(){
-  const ff=document.getElementById('plt-filter-farm')?document.getElementById('plt-filter-farm').value:'';
+  const ff=document.getElementById('plt-filter-farm')?.value||'';
+  const sf=document.getElementById('plt-hist-filter-status')?.value||'';
   let list=D.plantations.filter(p=>p.status!=='active');
   if(ff) list=list.filter(p=>p.farm===ff);
+  if(sf) list=list.filter(p=>p.status===sf);
   list.sort((a,b)=>(b.failDate||b.harvestDate||b.sow).localeCompare(a.failDate||a.harvestDate||a.sow));
-  const tb=document.getElementById('plt-hist-body');
-  if(!tb) return;
+
+  const el=document.getElementById('plt-hist-cards');
+  const countEl=document.getElementById('plt-hist-count');
+  if(!el) return;
+  if(countEl) countEl.textContent=list.length+' નોંધ';
+  if(!list.length){el.innerHTML='<div class="loading">કોઈ ઇતિહાસ નથી</div>';return;}
+
   const FAIL_REASON_LABEL={drought:'🌵 દુષ્કાળ',flood:'🌊 પૂર',pest:'🐛 જીવાત',disease:'🦠 રોગ',frost:'❄️ ઠંડી',hail:'🌨 કરા',heat:'🔥 ગરમી',soil:'🪨 જમીન',seed_quality:'🌱 બિયારણ',labour:'👷 મજૂરી',market:'📉 ભાવ',other:'અન્ય'};
-  tb.innerHTML=list.length?list.map(p=>{
+
+  el.innerHTML=list.map(p=>{
     const ri=D.plantations.indexOf(p);
     const isFailed=p.status==='failed';
     const isHarvested=p.status==='harvested';
-    const stC=isHarvested?'bg':isFailed?'br':'ba';
-    const stL=isHarvested?'✓ લણણી':isFailed?'✕ નિ.':'?';
     const pl=getPltPL(p.id);
     const plColor=pl.netPL>=0?'var(--green-dark)':'var(--red-dark)';
+    const accentColor=isFailed?'var(--red-dark)':isHarvested?'var(--green)':'var(--text3)';
+    const statusBadge=isHarvested
+      ?`<span style="background:var(--green-light);color:var(--green-dark);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700;">✓ લણણી</span>`
+      :`<span style="background:var(--red-light);color:var(--red-dark);padding:2px 8px;border-radius:8px;font-size:11px;font-weight:700;">✕ નિષ્ફળ</span>`;
     const endDate=isFailed?(p.failDate||'—'):(p.harvestDate||'—');
+    const sowDays=p.sow&&endDate!=='—'?Math.round((new Date(endDate)-new Date(p.sow))/86400000):null;
 
-    // Failed crop detail row
-    const failDetail=isFailed?`
-      <tr style="background:var(--red-light);">
-        <td colspan="11" style="padding:8px 10px;font-size:12px;">
-          <span style="font-weight:600;color:var(--red-dark);">✕ ${FAIL_REASON_LABEL[p.failReason]||p.failReason||'—'}</span>
-          ${p.failCause?`<span style="color:var(--red-dark);margin-left:8px;">${p.failCause.slice(0,80)}${p.failCause.length>80?'...':''}</span>`:''}
-          ${p.failLossEst?`<span style="color:var(--red-dark);margin-left:8px;font-weight:600;">₹${p.failLossEst.toLocaleString('en-IN')} નુ.</span>`:''}
-          ${p.failNote?`<span style="color:var(--text2);margin-left:8px;font-style:italic;">💡 ${p.failNote.slice(0,60)}</span>`:''}
-        </td>
-      </tr>`:'';
+    // Photos — plantation + fail photo
+    const histPhotos=[];
+    if(p.photo1) histPhotos.push({src:p.photo1,label:'📷 ફોટો 1'});
+    if(p.photo2) histPhotos.push({src:p.photo2,label:'📷 ફોટો 2'});
+    if(p.photo3) histPhotos.push({src:p.photo3,label:'📦 બેચ/બિલ'});
+    if(p.failPhoto) histPhotos.push({src:p.failPhoto,label:'✕ નિષ્ફળ ફોટો'});
+    // Field log photos
+    D.fieldLogs.filter(l=>l.pltId===p.id&&l.photoData).forEach(l=>{
+      const lbl={fertilisation:'🧪 ખાતર',pesticide:'🐛 દવા',sale:'💰 વેચાણ',irrigation:'💧 પિયત',cultivation:'🌱 ખેડ',equipment:'🔧 સાધન',other:'📝 અન્ય'}[l.type]||l.type;
+      histPhotos.push({src:l.photoData,label:lbl,date:l.date});
+    });
 
-    return`<tr style="${isFailed?'opacity:.85;':''}">
-      <td><span class="badge bb" style="font-size:11px;">${p.farm}</span></td>
-      <td style="font-size:12px;color:var(--text2);">${p.lane||'—'}</td>
-      <td><strong>${p.crop}</strong>${p.variety?`<br><span style="font-size:11px;color:var(--text2);">${p.variety}</span>`:''}</td>
-      <td style="font-size:12px;">${p.sow}</td>
-      <td style="font-size:12px;">${endDate}</td>
-      <td style="font-size:12px;">${p.area}వ.</td>
-      <td><span class="badge ${stC}" style="font-size:11px;">${stL}</span></td>
-      <td style="font-size:12px;">${isHarvested&&p.yieldKg?p.yieldKg+'kg':'—'}</td>
-      <td style="font-size:12px;font-weight:600;color:${plColor};">${fmt(pl.netPL)}</td>
-      <td style="font-size:12px;">${p.totalPltCost?fmt(p.totalPltCost):'—'}</td>
-      <td><button class="delbtn" onclick="deleteHistoryPlantation(${ri})">✕</button></td>
-    </tr>${failDetail}`;
-  }).join(''):'<tr><td colspan="11" class="empty-row">કોઈ ઇતિહાસ નથી</td></tr>';
+    const isExpanded=window['_histExpanded_'+p.id]!==false;
+    const detailTab=window['_histTab_'+p.id]||'summary';
+
+    // Summary content
+    const summaryHtml=`
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+        <div style="background:var(--red-light);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--red-dark);font-weight:700;">↓ કુલ ખર્ચ</div>
+          <div style="font-size:15px;font-weight:800;color:var(--red-dark);">${fmt(pl.expense)}</div>
+          <div style="font-size:10px;color:var(--text3);">${p.area}v · ₹${Math.round(pl.expense/(p.area||1))}/v</div>
+        </div>
+        <div style="background:var(--green-light);border-radius:8px;padding:10px;text-align:center;">
+          <div style="font-size:10px;color:var(--green-dark);font-weight:700;">↑ આવક</div>
+          <div style="font-size:15px;font-weight:800;color:var(--green-dark);">${fmt(pl.income)}</div>
+          ${pl.yieldKg?`<div style="font-size:10px;color:var(--text3);">${pl.yieldKg}kg · ₹${Math.round(pl.income/(pl.yieldKg||1))}/kg</div>`:`<div style="font-size:10px;color:var(--text3);">વેચાણ નહીં</div>`}
+        </div>
+        <div style="background:${pl.netPL>=0?'var(--green-light)':'var(--red-light)'};border-radius:8px;padding:10px;text-align:center;border:2px solid ${pl.netPL>=0?'var(--green)':'var(--red)'};">
+          <div style="font-size:10px;font-weight:700;color:${plColor};">ચો. નફો/ખોટ</div>
+          <div style="font-size:15px;font-weight:800;color:${plColor};">${pl.netPL>=0?'+':''}${fmt(pl.netPL)}</div>
+        </div>
+      </div>
+      ${isFailed?`
+      <div style="background:var(--red-light);border-radius:8px;padding:12px;margin-bottom:12px;border-left:3px solid var(--red);">
+        <div style="font-size:12px;font-weight:700;color:var(--red-dark);margin-bottom:6px;">✕ નિષ્ફળતાની વિગત</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;">
+          <div><span style="color:var(--text3);">કારણ: </span><span style="font-weight:600;color:var(--red-dark);">${FAIL_REASON_LABEL[p.failReason]||p.failReason||'—'}</span></div>
+          <div><span style="color:var(--text3);">તારીખ: </span><span style="font-weight:600;">${p.failDate||'—'}</span></div>
+          ${p.failLossEst?`<div><span style="color:var(--text3);">અ. ખોટ: </span><span style="font-weight:700;color:var(--red-dark);">₹${Number(p.failLossEst).toLocaleString('en-IN')}</span></div>`:''}
+          ${sowDays?`<div><span style="color:var(--text3);">કુલ દિ.: </span><span style="font-weight:600;">${sowDays} દિ.</span></div>`:''}
+        </div>
+        ${p.failCause?`<div style="margin-top:8px;font-size:12px;color:var(--red-dark);">📋 ${p.failCause}</div>`:''}
+        ${p.failNote?`<div style="margin-top:6px;font-size:11px;color:var(--text2);font-style:italic;">💡 ${p.failNote}</div>`:''}
+      </div>`:''}
+      ${isHarvested&&p.harvestNote?`<div style="background:var(--green-light);border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;color:var(--green-dark);">💡 ${p.harvestNote}</div>`:''}
+      <div style="display:flex;gap:6px;">
+        <button class="btn" style="flex:1;background:var(--red-light);color:var(--red-dark);border-color:var(--red);" onclick="if(confirm('રેકોર્ડ કાઢી નાખો?'))deleteHistoryPlantation(${ri})">🗑 કાઢો</button>
+      </div>`;
+
+    // Photo content
+    const photoHtml=histPhotos.length?`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+        ${histPhotos.map((ph,pi)=>`
+          <div style="cursor:pointer;" onclick="_histShowPhoto('${p.id}',${pi})">
+            <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg2);position:relative;">
+              <img src="${ph.src}" style="width:100%;height:100%;object-fit:cover;" alt=""/>
+              <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);padding:3px 5px;font-size:10px;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ph.label}</div>
+            </div>
+            ${ph.date?`<div style="font-size:9px;color:var(--text3);margin-top:2px;text-align:center;">${ph.date}</div>`:''}
+          </div>`).join('')}
+      </div>`:`<div style="text-align:center;padding:20px;color:var(--text3);font-size:12px;">📷 કોઈ ફોટો નથી</div>`;
+
+    // Transaction content
+    const histLogs=D.fieldLogs.filter(l=>l.pltId===p.id&&l.type!=='plantation_cost')
+      .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    const txRows=histLogs.length?histLogs.map(l=>{
+      const isIncome=l.kind==='income';
+      const icons={fertilisation:'🧪',pesticide:'🐛',sale:'💰',irrigation:'💧',cultivation:'🌱',equipment:'🔧',farmwork:'🏗',labour:'👷',advance:'💸',other:'📝'}[l.type]||'📋';
+      const lbls={fertilisation:'ખાતર',pesticide:'દવા',sale:'વેચાણ',irrigation:'પિયત',cultivation:'ખેડ',equipment:'સાધન',farmwork:'ખેતર કામ',labour:'મજૂરી',advance:'ઉધાર',other:'અન્ય'}[l.type]||l.type;
+      const amt=l.total||l.amount||0;
+      const detail=l.product||l.workType||l.equipName||l.activity||'';
+      return`<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:0.5px solid var(--border);">
+        <span style="font-size:14px;flex-shrink:0;">${icons}</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:600;">${lbls}</div>
+          <div style="font-size:10px;color:var(--text3);">${l.date||''} ${detail?'· '+detail:''}</div>
+        </div>
+        ${l.photoData?`<div onclick="_histShowLogPhoto('${l.id}')" style="width:32px;height:32px;border-radius:6px;overflow:hidden;cursor:pointer;flex-shrink:0;"><img src="${l.photoData}" style="width:100%;height:100%;object-fit:cover;"/></div>`:''}
+        <div style="text-align:right;flex-shrink:0;min-width:52px;">
+          <div style="font-size:12px;font-weight:700;color:${isIncome?'var(--green-dark)':'var(--red-dark)'};">${isIncome?'+':'-'}${fmt(amt)}</div>
+        </div>
+      </div>`;
+    }).join(''):`<div style="text-align:center;padding:16px;color:var(--text3);font-size:12px;">કોઈ વ્યવહાર નોંધ નથી</div>`;
+
+    return`<div class="card" style="margin-bottom:14px;border-left:4px solid ${accentColor};padding:0;overflow:hidden;" id="hist-card-${p.id}">
+      <!-- HEADER -->
+      <div style="padding:14px 14px 10px;cursor:pointer;" onclick="toggleHistCard('${p.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+          <div style="flex:1;min-width:0;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;">
+              <span style="font-size:16px;font-weight:700;">${p.crop}</span>
+              ${p.variety?`<span style="font-size:12px;color:var(--text2);">(${p.variety})</span>`:''}
+              ${statusBadge}
+              ${histPhotos.length>0?`<span style="font-size:10px;background:var(--bg2);color:var(--text2);padding:1px 6px;border-radius:8px;">📷 ${histPhotos.length}</span>`:''}
+            </div>
+            <div style="font-size:11px;color:var(--text2);display:flex;gap:6px;flex-wrap:wrap;">
+              <span class="badge bb">${p.farm}</span>
+              ${p.lane?`<span class="badge ba">${p.lane}</span>`:''}
+              <span style="color:var(--text3);">🌱 ${p.sow}</span>
+              <span style="color:var(--text3);">${isFailed?'✕':'✓'} ${endDate}</span>
+              ${sowDays?`<span style="color:var(--text3);">${sowDays} દિ.</span>`:''}
+            </div>
+          </div>
+          <div style="text-align:right;flex-shrink:0;margin-left:10px;">
+            <div style="font-size:10px;color:var(--text3);">ચો. નફો/ખોટ</div>
+            <div style="font-size:17px;font-weight:800;color:${plColor};">${pl.netPL>=0?'+':''}${fmt(pl.netPL)}</div>
+            <div style="font-size:12px;color:var(--text3);">${isExpanded?'▲':'▽'}</div>
+          </div>
+        </div>
+        ${isFailed&&p.failReason?`<div style="margin-top:6px;font-size:11px;background:var(--red-light);color:var(--red-dark);padding:3px 8px;border-radius:6px;display:inline-block;">✕ ${FAIL_REASON_LABEL[p.failReason]||p.failReason}</div>`:''}
+      </div>
+
+      <!-- EXPANDABLE -->
+      <div id="hist-card-detail-${p.id}" style="display:${isExpanded?'block':'none'};">
+        <!-- Sub-tabs -->
+        <div style="display:flex;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);">
+          ${[['summary','📊 સારાંશ','var(--green-dark)','var(--green-light)','var(--green)'],
+             ['photos',`📷 ફોટો (${histPhotos.length})`,'var(--blue-dark)','var(--blue-light)','var(--blue)'],
+             ['tx',`📋 વ્યવહાર`,'var(--amber-dark)','var(--amber-light)','var(--amber)']
+            ].map(([key,label,ac,abg,ab])=>`
+            <button onclick="setHistTab('${p.id}','${key}')" id="hist-dtab-${p.id}-${key}"
+              style="flex:1;padding:8px 4px;border:none;background:${detailTab===key?abg:'transparent'};font-size:12px;font-weight:${detailTab===key?'700':'500'};color:${detailTab===key?ac:'var(--text2)'};cursor:pointer;border-bottom:2px solid ${detailTab===key?ab:'transparent'};">
+              ${label}
+            </button>`).join('')}
+        </div>
+        <div id="hist-content-${p.id}-summary" style="padding:12px 14px;display:${detailTab==='summary'?'block':'none'};">${summaryHtml}</div>
+        <div id="hist-content-${p.id}-photos"  style="padding:12px 14px;display:${detailTab==='photos'?'block':'none'};">${photoHtml}</div>
+        <div id="hist-content-${p.id}-tx"      style="padding:12px 14px;display:${detailTab==='tx'?'block':'none'};max-height:380px;overflow-y:auto;">${txRows}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  // Store history photos for lightbox
+  window._histPhotos={};
+  list.forEach(p=>{
+    const photos=[];
+    if(p.photo1) photos.push({src:p.photo1,label:'📷 ફોટો 1',date:p.sow});
+    if(p.photo2) photos.push({src:p.photo2,label:'📷 ફોટો 2',date:p.sow});
+    if(p.photo3) photos.push({src:p.photo3,label:'📦 બેચ/બિલ',date:p.sow});
+    if(p.failPhoto) photos.push({src:p.failPhoto,label:'✕ નિષ્ફળ ફોટો',date:p.failDate||''});
+    D.fieldLogs.filter(l=>l.pltId===p.id&&l.photoData).forEach(l=>{
+      const lbl={fertilisation:'🧪 ખાતર',pesticide:'🐛 દવા',sale:'💰 વેચાણ',irrigation:'💧 પિયત',cultivation:'🌱 ખેડ',equipment:'🔧 સાધન',other:'📝 અન્ય'}[l.type]||l.type;
+      photos.push({src:l.photoData,label:lbl,date:l.date,logId:l.id});
+    });
+    window._histPhotos[p.id]=photos;
+  });
+}
+
+function toggleHistCard(pltId){
+  const exp=window['_histExpanded_'+pltId]===false?true:false;
+  window['_histExpanded_'+pltId]=exp;
+  const det=document.getElementById('hist-card-detail-'+pltId);
+  if(det) det.style.display=exp?'block':'none';
+  // update chevron
+  const header=document.querySelector('#hist-card-'+pltId+' > div:first-child > div:last-child > div:last-child');
+  if(header) header.textContent=exp?'▲':'▽';
+}
+
+function setHistTab(pltId,tab){
+  window['_histTab_'+pltId]=tab;
+  const colors={summary:['var(--green-dark)','var(--green-light)','var(--green)'],photos:['var(--blue-dark)','var(--blue-light)','var(--blue)'],tx:['var(--amber-dark)','var(--amber-light)','var(--amber)']};
+  ['summary','photos','tx'].forEach(t=>{
+    const btn=document.getElementById('hist-dtab-'+pltId+'-'+t);
+    const content=document.getElementById('hist-content-'+pltId+'-'+t);
+    const isActive=t===tab;
+    const [ac,abg,ab]=colors[t];
+    if(btn){btn.style.background=isActive?abg:'transparent';btn.style.fontWeight=isActive?'700':'500';btn.style.color=isActive?ac:'var(--text2)';btn.style.borderBottomColor=isActive?ab:'transparent';}
+    if(content) content.style.display=isActive?'block':'none';
+  });
+}
+
+function _histShowPhoto(pltId,idx){
+  const photos=window._histPhotos?.[pltId]||[];
+  if(!photos.length) return;
+  window._lbPhotos=photos; window._lbIdx=idx;
+  _renderLightbox();
+  document.getElementById('photo-lightbox').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+function _histShowLogPhoto(logId){
+  const l=D.fieldLogs.find(x=>x.id===logId);
+  if(!l||!l.photoData) return;
+  window._lbPhotos=[{src:l.photoData,label:l.type,date:l.date,note:l.note||''}];
+  window._lbIdx=0;
+  _renderLightbox();
+  document.getElementById('photo-lightbox').style.display='flex';
+  document.body.style.overflow='hidden';
 }
 
 function deleteHistoryPlantation(ri){
