@@ -1220,7 +1220,19 @@ self.addEventListener('fetch', e=>{
               <button class="btn" style="font-size:11px;padding:5px 10px;width:auto;" onclick="openFileUpload('irr-sess-photo-preview')">📁 Upload</button>
               <span id="irr-sess-photo-status" style="font-size:11px;color:var(--text2);"></span>
             </div>
-            <img id="irr-sess-photo-preview" style="display:none;max-width:100%;max-height:100px;border-radius:var(--radius);margin-top:6px;" alt=""/>
+            <div style="margin-top:8px;">
+                        <div style="display:flex;gap:8px;align-items:flex-start;">
+                          <div id="irr-sess-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('irr-sess-photo-preview')">
+                            <img id="irr-sess-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                            <span id="irr-sess-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:6px;">
+                            <button id="irr-sess-photo-del" onclick="_clearFormPhoto('irr-sess')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                            <span id="irr-sess-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                          </div>
+                        </div>
+                        
+                      </div>
             <input type="hidden" id="irr-sess-photo-data"/>
           </div>
           <div class="err" id="irr-sess-err" style="margin-top:8px;"></div>
@@ -1783,7 +1795,19 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="font-size:12px;padding:6px 12px;width:auto;" onclick="openFileUpload('settle-photo-preview')">📁 Upload</button>
             <span id="settle-photo-status" style="font-size:11px;color:var(--text2);"></span>
           </div>
-          <img id="settle-photo-preview" style="display:none;max-width:100%;max-height:140px;border-radius:var(--radius);margin-top:8px;object-fit:contain;" alt="preview"/>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="settle-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('settle-photo-preview')">
+                          <img id="settle-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="settle-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="settle-photo-del" onclick="_clearFormPhoto('settle')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="settle-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      
+                    </div>
           <input type="hidden" id="settle-photo-data"/>
         </div>
         <!-- Photo upload -->
@@ -1794,7 +1818,19 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="font-size:12px;padding:6px 12px;width:auto;" onclick="openFileUpload('settle-photo-preview')">📁 Upload</button>
             <span id="settle-photo-status" style="font-size:11px;color:var(--text2);"></span>
           </div>
-          <img id="settle-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin-top:8px;object-fit:contain;" alt="receipt"/>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="settle-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('settle-photo-preview')">
+                          <img id="settle-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="settle-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="settle-photo-del" onclick="_clearFormPhoto('settle')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="settle-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      
+                    </div>
           <input type="hidden" id="settle-photo-data"/>
         </div>
         <div class="err" id="settle-err" style="margin-bottom:8px;"></div>
@@ -1906,7 +1942,19 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="width:auto;padding:6px 12px;font-size:12px;" onclick="openFileUpload('fail-photo-preview','fail-photo-data')">📁 Upload</button>
           </div>
           <input type="hidden" id="fail-photo-data"/>
-          <img id="fail-photo-preview" style="display:none;max-width:100%;max-height:120px;object-fit:contain;border-radius:var(--radius);margin-top:6px;" alt=""/>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="fail-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('fail-photo-preview')">
+                          <img id="fail-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="fail-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="fail-photo-del" onclick="_clearFormPhoto('fail')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="fail-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      
+                    </div>
         </div>
         <div class="err" id="fail-err"></div>
         <div class="modal-footer">
@@ -2560,9 +2608,19 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('f-photo-preview')">📷</button>
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('f-photo-preview')">📁</button>
           </div></div>
-          <img id="f-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin:6px 0;" alt="preview"/>
-          <input type="hidden" id="f-photo-data"/>
-          <span id="f-photo-status" style="display:none;"></span>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="f-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('f-photo-preview')">
+                          <img id="f-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="f-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="f-photo-del" onclick="_clearFormPhoto('f')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="f-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      <input type="hidden" id="f-photo-data"/>
+                    </div>
 
         </div></div>
 
@@ -2630,8 +2688,19 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('p-photo-preview')">📷</button>
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('p-photo-preview')">📁</button>
           </div></div>
-          <img id="p-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin:6px 0;" alt="preview"/>
-          <input type="hidden" id="p-photo-data"/>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="p-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('p-photo-preview')">
+                          <img id="p-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="p-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="p-photo-del" onclick="_clearFormPhoto('p')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="p-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      <input type="hidden" id="p-photo-data"/>
+                    </div>
           <span id="p-photo-status" style="display:none;"></span>
 
         </div></div>
@@ -2769,8 +2838,19 @@ self.addEventListener('fetch', e=>{
               <button class="btn" style="font-size:12px;padding:6px 12px;width:auto;" onclick="openFileUpload('s-photo-preview')">📁 Upload</button>
               <span id="s-photo-status" style="font-size:11px;color:var(--text2);"></span>
             </div>
-            <img id="s-photo-preview" style="display:none;max-width:100%;max-height:140px;border-radius:var(--radius);margin-top:8px;object-fit:contain;" alt="preview"/>
-            <input type="hidden" id="s-photo-data"/>
+            <div style="margin-top:8px;">
+                        <div style="display:flex;gap:8px;align-items:flex-start;">
+                          <div id="s-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('s-photo-preview')">
+                            <img id="s-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                            <span id="s-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                          </div>
+                          <div style="display:flex;flex-direction:column;gap:6px;">
+                            <button id="s-photo-del" onclick="_clearFormPhoto('s')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                            <span id="s-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                          </div>
+                        </div>
+                        <input type="hidden" id="s-photo-data"/>
+                      </div>
           </div>
 
           <!-- Row 6: Note -->
@@ -2820,11 +2900,22 @@ self.addEventListener('fetch', e=>{
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('c-photo-preview')">📷</button>
             <button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('c-photo-preview')">📁</button>
           </div></div>
-          <img id="c-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin:6px 0;" alt="preview"/>
-          <input type="hidden" id="c-photo-data"/>
+          <div style="margin-top:8px;">
+                      <div style="display:flex;gap:8px;align-items:flex-start;">
+                        <div id="c-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('c-photo-preview')">
+                          <img id="c-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                          <span id="c-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:6px;">
+                          <button id="c-photo-del" onclick="_clearFormPhoto('c')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+                          <span id="c-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span>
+                        </div>
+                      </div>
+                      <input type="hidden" id="c-photo-data"/>
+                    </div>
 
         </div></div>
-        <div id="fld-equipment" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">સાધન *</div><div class="il-val"><input id="eq-used-name" placeholder="ટ્રેક્ટર, Sprayer..."/></div></div><div class="il-row"><div class="il-lbl">કુલ ₹ *</div><div class="il-val"><input id="eq-fl-cost" type="number" placeholder="0" style="flex:1;"/></div></div><div class="il-row"><div class="il-lbl">ચુકવણી</div><div class="il-val"><select id="eq-paystatus" onchange="toggleEqPaid()" style="flex:1;"><option value="paid">✅ પૂરેપૂરું ભરેલ</option><option value="partial">⚠️ અંશતઃ ભરેલ</option><option value="pending">⏳ બાકી</option></select></div></div><div id="eq-paid-wrap" style="display:none;" class="il-row"><div class="il-lbl">ભરેલ ₹</div><div class="il-val"><input id="eq-paid" type="number" placeholder="ભરેલ ₹"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">નોંધ / 📷</div><div class="il-val"><input id="eq-note-field" placeholder="નોંધ..." style="flex:1;"/><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('eq-photo-preview')">📷</button><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('eq-photo-preview')">📁</button></div></div><img id="eq-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin:6px 0;" alt="preview"/><input type="hidden" id="eq-photo-data"/><input type="hidden" id="eq-hours" value="0"/><input type="hidden" id="eq-fuel" value="0"/><input type="hidden" id="eq-operator" value=""/></div></div>
+        <div id="fld-equipment" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">સાધન *</div><div class="il-val"><input id="eq-used-name" placeholder="ટ્રેક્ટર, Sprayer..."/></div></div><div class="il-row"><div class="il-lbl">કુલ ₹ *</div><div class="il-val"><input id="eq-fl-cost" type="number" placeholder="0" style="flex:1;"/></div></div><div class="il-row"><div class="il-lbl">ચુકવણી</div><div class="il-val"><select id="eq-paystatus" onchange="toggleEqPaid()" style="flex:1;"><option value="paid">✅ પૂરેપૂરું ભરેલ</option><option value="partial">⚠️ અંશતઃ ભરેલ</option><option value="pending">⏳ બાકી</option></select></div></div><div id="eq-paid-wrap" style="display:none;" class="il-row"><div class="il-lbl">ભરેલ ₹</div><div class="il-val"><input id="eq-paid" type="number" placeholder="ભરેલ ₹"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">નોંધ / 📷</div><div class="il-val"><input id="eq-note-field" placeholder="નોંધ..." style="flex:1;"/><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('eq-photo-preview')">📷</button><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('eq-photo-preview')">📁</button></div></div><div style="margin-top:8px;"><div style="display:flex;gap:8px;align-items:flex-start;"><div id="eq-photo-wrap" style="width:120px;height:120px;flex-shrink:0;border-radius:var(--radius);overflow:hidden;background:var(--bg2);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('eq-photo-preview')"><img id="eq-photo-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/><span id="eq-photo-placeholder" style="font-size:28px;color:var(--text3);">📷</span></div><div style="display:flex;flex-direction:column;gap:6px;"><button id="eq-photo-del" onclick="_clearFormPhoto('eq')" style="display:none;padding:5px 10px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button><span id="eq-photo-status" style="font-size:10px;color:var(--green-dark);word-break:break-all;max-width:120px;"></span></div></div><input type="hidden" id="eq-photo-data"/></div><input type="hidden" id="eq-hours" value="0"/><input type="hidden" id="eq-fuel" value="0"/><input type="hidden" id="eq-operator" value=""/></div></div>
 
         <!-- FARM WORK inline -->
         <div id="fld-farmwork" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">ખેતર કામ *</div><div class="il-val"><select id="fw-type"><option>મલ્ચિંગ (ઢાંકવું)</option><option>ટપક સિંચાઈ</option><option>વાડ (ઘેરાવ)</option><option>છંટણી/પાતળું કરવું</option><option>પાળાનું સમારકામ</option><option>અન્ય માળખું</option><option>અન્ય</option></select></div></div><div class="il-row"><div class="il-lbl">વિસ્તાર / સામગ્રી</div><div class="il-val"><input id="fw-area" type="number" placeholder="2.5 વ." style="flex:1;"/><input id="fw-material" placeholder="પ્લાસ્ટિક, વાયર..." style="flex:2;"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">કુલ ₹</div><div class="il-val"><input id="fw-cost" type="number" placeholder="0"/></div></div></div></div>
@@ -8186,6 +8277,9 @@ function resetActForm(){
     if(el.tagName==='SELECT') el.selectedIndex=0;
     else el.value='';
   });
+  // Reset all photo thumbnails back to placeholder state
+  ['f','p','c','eq','s'].forEach(prefix=>_clearFormPhoto(prefix));
+  document.querySelectorAll('#act-form-card img[id$="-photo-preview"]').forEach(img=>{img.src='';img.style.display='none';});
   document.getElementById('al-err').textContent='';
   // Hide both rows — will be shown correctly on next type selection
   const pltRow=document.getElementById('al-plt-row');
@@ -9109,7 +9203,7 @@ function handlePhotoFile(file,previewId){
       const placeholderId=previewId.replace('preview','placeholder');
       const ph=document.getElementById(placeholderId);
       if(ph) ph.style.display='none';
-      // Show explicit delete button if present (new plantation photo layout)
+      // Show explicit delete button if present (plantation or field log form)
       const delBtnId=previewId.replace('preview','del');
       const delBtn=document.getElementById(delBtnId);
       if(delBtn) delBtn.style.display='block';
@@ -9127,6 +9221,20 @@ function clearPlantationPhoto(n){
   const statusEl=document.getElementById('plt-photo'+n+'-status');
   const delBtn=document.getElementById('plt-photo'+n+'-del');
   const ph=document.getElementById('plt-photo'+n+'-placeholder');
+  if(dataEl) dataEl.value='';
+  if(prevEl){prevEl.src='';prevEl.style.display='none';}
+  if(statusEl) statusEl.textContent='';
+  if(delBtn) delBtn.style.display='none';
+  if(ph) ph.style.display='';
+}
+
+// Clear any form photo by prefix (used by field log forms)
+function _clearFormPhoto(prefix){
+  const dataEl=document.getElementById(prefix+'-photo-data');
+  const prevEl=document.getElementById(prefix+'-photo-preview');
+  const statusEl=document.getElementById(prefix+'-photo-status');
+  const delBtn=document.getElementById(prefix+'-photo-del');
+  const ph=document.getElementById(prefix+'-photo-placeholder');
   if(dataEl) dataEl.value='';
   if(prevEl){prevEl.src='';prevEl.style.display='none';}
   if(statusEl) statusEl.textContent='';
