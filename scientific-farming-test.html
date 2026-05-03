@@ -4,8 +4,66 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>વૈજ્ઞાનિક ખેતી</title>
-<!-- Supabase -->
+<meta name="theme-color" content="#2E7D32"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+<meta name="apple-mobile-web-app-title" content="વૈ. ખેતી"/>
+<!-- PWA Manifest (inline via data URI — single file app) -->
+<link rel="manifest" href="data:application/json,{%22name%22:%22%E0%AA%B5%E0%AB%88%E0%AA%9C%E0%AB%8D%E0%AA%9E%E0%AA%BE%E0%AA%A8%E0%AA%BF%E0%AA%95%20%E0%AA%96%E0%AB%87%E0%AA%A4%E0%AB%80%22,%22short_name%22:%22%E0%AA%B5%E0%AB%88.%20%E0%AA%96%E0%AB%87%E0%AA%A4%E0%AB%80%22,%22start_url%22:%22.%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%232E7D32%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Ctext%20y='.9em'%20font-size='90'%3E%F0%9F%8C%BE%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22any%22,%22type%22:%22image/svg+xml%22}]}"/>
+<!-- Supabase — loaded with offline fallback -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+// ── SERVICE WORKER REGISTRATION ──────────────────────────────────
+(function registerSW(){
+  if(!('serviceWorker' in navigator)) return;
+  // Inline Service Worker as blob — works from file:// and GitHub Pages
+  const swCode = `
+const CACHE='vk-v1';
+const CORE=['./'];
+self.addEventListener('install', e=>{
+  e.waitUntil(
+    caches.open(CACHE).then(c=>c.addAll(CORE)).then(()=>self.skipWaiting())
+  );
+});
+self.addEventListener('activate', e=>{
+  e.waitUntil(
+    caches.keys().then(keys=>Promise.all(
+      keys.filter(k=>k!==CACHE).map(k=>caches.delete(k))
+    )).then(()=>self.clients.claim())
+  );
+});
+self.addEventListener('fetch', e=>{
+  const url = e.request.url;
+  // Always network-first for Supabase API calls
+  if(url.includes('supabase.co')||url.includes('openweathermap')){
+    e.respondWith(fetch(e.request).catch(()=>new Response('',{status:503})));
+    return;
+  }
+  // Cache-first for everything else (app shell, CDN scripts)
+  e.respondWith(
+    caches.match(e.request).then(cached=>{
+      if(cached) return cached;
+      return fetch(e.request).then(resp=>{
+        if(resp&&resp.status===200&&resp.type!=='opaque'){
+          const clone=resp.clone();
+          caches.open(CACHE).then(c=>c.put(e.request,clone));
+        }
+        return resp;
+      }).catch(()=>cached||new Response('',{status=503}));
+    })
+  );
+});
+`;
+  try{
+    const blob=new Blob([swCode],{type:'text/javascript'});
+    const swUrl=URL.createObjectURL(blob);
+    navigator.serviceWorker.register(swUrl,{scope:'./'})
+      .then(reg=>console.log('SW registered'))
+      .catch(e=>console.log('SW registration skipped:',e.message));
+  }catch(e){console.log('SW blob failed:',e.message);}
+})();
+</script>
 <style>
   /* LOGIN SCREEN */
   #login-screen {
@@ -325,6 +383,13 @@
 </style>
 </head>
 <body>
+<!-- OFFLINE BANNER -->
+<div id="offline-banner" style="display:none;position:fixed;top:0;left:0;right:0;z-index:99999;background:#E65100;color:#fff;text-align:center;padding:8px 16px;font-size:13px;font-weight:700;letter-spacing:0.3px;">
+  📵 Internet નથી — ડેટા local છે, Internet આવતાં sync થશે
+</div>
+
+<!-- PHOTO LIGHTBOX -->
+<div id="photo-lightbox" onclick="if(event.target===this)closePhotoLightbox()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:99998;align-items:center;justify-content:center;flex-direction:column;padding:20px;"></div>
 
 <!-- WELCOME WIZARD (shown once for new users) -->
 <div id="welcome-માર્ગદર્શિકા (Wizard)" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:500;align-items:center;justify-content:center;">
@@ -1472,42 +1537,61 @@
 
         <!-- ════ SECTION 4: PHOTOS ════ -->
         <div class="card" style="margin-bottom:10px;">
-          <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:800;color:var(--text2);text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px;">
             📷 ફોટો
           </div>
-          <div id="plt-photos-body">
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-              <div style="background:var(--bg2);border-radius:var(--radius);padding:10px;">
-                <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">🌾 ખેતર (વાવણી પહેલા)</div>
-                <div style="display:flex;gap:6px;margin-bottom:6px;">
-                  <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openCamera('plt-photo1-preview')">📷</button>
-                  <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openFileUpload('plt-photo1-preview')">📁</button>
-                  <span id="plt-photo1-status" style="font-size:10px;color:var(--text2);"></span>
-                </div>
-                <img id="plt-photo1-preview" style="display:none;width:100%;max-height:100px;object-fit:cover;border-radius:var(--radius);" alt=""/>
-                <input type="hidden" id="plt-photo1-data"/>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;">
+
+            <!-- PHOTO 1 -->
+            <div style="background:var(--bg2);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;">
+              <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;">📷 ફોટો 1</div>
+              <!-- Thumbnail square -->
+              <div style="width:100%;aspect-ratio:1;border-radius:var(--radius);overflow:hidden;background:var(--bg);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('plt-photo1-preview')" id="plt-photo1-wrap">
+                <img id="plt-photo1-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                <span id="plt-photo1-placeholder" style="font-size:22px;color:var(--text3);">📷</span>
               </div>
-              <div style="background:var(--bg2);border-radius:var(--radius);padding:10px;">
-                <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">🌱 ખેતર (વાવણી પછી)</div>
-                <div style="display:flex;gap:6px;margin-bottom:6px;">
-                  <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openCamera('plt-photo2-preview')">📷</button>
-                  <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openFileUpload('plt-photo2-preview')">📁</button>
-                  <span id="plt-photo2-status" style="font-size:10px;color:var(--text2);"></span>
-                </div>
-                <img id="plt-photo2-preview" style="display:none;width:100%;max-height:100px;object-fit:cover;border-radius:var(--radius);" alt=""/>
-                <input type="hidden" id="plt-photo2-data"/>
+              <!-- Action buttons -->
+              <div style="display:flex;gap:4px;width:100%;">
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openCamera('plt-photo1-preview')">📷</button>
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openFileUpload('plt-photo1-preview')">📁</button>
               </div>
+              <button id="plt-photo1-del" onclick="clearPlantationPhoto(1)" style="display:none;width:100%;padding:4px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:10px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+              <input type="hidden" id="plt-photo1-data"/>
+              <span id="plt-photo1-status" style="font-size:9px;color:var(--green-dark);text-align:center;word-break:break-all;"></span>
             </div>
-            <div style="background:var(--bg2);border-radius:var(--radius);padding:10px;margin-top:8px;">
-              <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;">📦 બેચ / બિલ</div>
-              <div style="display:flex;gap:6px;align-items:center;">
-                <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openCamera('plt-photo3-preview')">📷</button>
-                <button class="btn" style="font-size:11px;padding:4px 8px;width:auto;" onclick="openFileUpload('plt-photo3-preview')">📁</button>
-                <span id="plt-photo3-status" style="font-size:10px;color:var(--text2);"></span>
+
+            <!-- PHOTO 2 -->
+            <div style="background:var(--bg2);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;">
+              <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;">📷 ફોટો 2</div>
+              <div style="width:100%;aspect-ratio:1;border-radius:var(--radius);overflow:hidden;background:var(--bg);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('plt-photo2-preview')" id="plt-photo2-wrap">
+                <img id="plt-photo2-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                <span id="plt-photo2-placeholder" style="font-size:22px;color:var(--text3);">📷</span>
               </div>
-              <img id="plt-photo3-preview" style="display:none;max-width:100%;max-height:80px;object-fit:contain;border-radius:var(--radius);margin-top:6px;" alt=""/>
+              <div style="display:flex;gap:4px;width:100%;">
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openCamera('plt-photo2-preview')">📷</button>
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openFileUpload('plt-photo2-preview')">📁</button>
+              </div>
+              <button id="plt-photo2-del" onclick="clearPlantationPhoto(2)" style="display:none;width:100%;padding:4px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:10px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
+              <input type="hidden" id="plt-photo2-data"/>
+              <span id="plt-photo2-status" style="font-size:9px;color:var(--green-dark);text-align:center;word-break:break-all;"></span>
+            </div>
+
+            <!-- PHOTO 3 — Bill -->
+            <div style="background:var(--bg2);border-radius:var(--radius);padding:8px;display:flex;flex-direction:column;align-items:center;gap:6px;">
+              <div style="font-size:10px;font-weight:600;color:var(--text2);text-align:center;">📦 બેચ/બિલ</div>
+              <div style="width:100%;aspect-ratio:1;border-radius:var(--radius);overflow:hidden;background:var(--bg);border:1px dashed var(--border2);display:flex;align-items:center;justify-content:center;cursor:pointer;" onclick="openFileUpload('plt-photo3-preview')" id="plt-photo3-wrap">
+                <img id="plt-photo3-preview" style="display:none;width:100%;height:100%;object-fit:cover;" alt=""/>
+                <span id="plt-photo3-placeholder" style="font-size:22px;color:var(--text3);">📦</span>
+              </div>
+              <div style="display:flex;gap:4px;width:100%;">
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openCamera('plt-photo3-preview')">📷</button>
+                <button class="btn" style="font-size:10px;padding:3px 6px;flex:1;" onclick="openFileUpload('plt-photo3-preview')">📁</button>
+              </div>
+              <button id="plt-photo3-del" onclick="clearPlantationPhoto(3)" style="display:none;width:100%;padding:4px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:10px;font-weight:600;cursor:pointer;">🗑 દૂર કરો</button>
               <input type="hidden" id="plt-photo3-data"/>
+              <span id="plt-photo3-status" style="font-size:9px;color:var(--green-dark);text-align:center;word-break:break-all;"></span>
             </div>
+
           </div>
         </div>
 
@@ -2192,6 +2276,57 @@
           </select>
         </div>
 
+        <!-- Notification Settings -->
+        <div style="font-size:11px;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 10px;padding-top:16px;border-top:0.5px solid var(--border);">🔔 સૂચનાઓ (Notifications)</div>
+        <div id="notif-settings-wrap" style="background:var(--bg2);border-radius:var(--radius);padding:14px;margin-bottom:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div>
+              <div style="font-size:13px;font-weight:600;">સૂચનાઓ ચાલુ કરો</div>
+              <div style="font-size:11px;color:var(--text2);margin-top:2px;">પિયત, લણણી, ચુકવણી — રોજ સવારે 8 વાગ્યે</div>
+            </div>
+            <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer;">
+              <input type="checkbox" id="notif-master-toggle" onchange="handleNotifToggle(this.checked)" style="opacity:0;width:0;height:0;position:absolute;"/>
+              <span id="notif-toggle-track" style="position:absolute;inset:0;border-radius:12px;background:var(--border2);transition:background .3s;"></span>
+              <span id="notif-toggle-thumb" style="position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .3s;box-shadow:0 1px 3px rgba(0,0,0,.3);"></span>
+            </label>
+          </div>
+          <div id="notif-sub-settings" style="display:none;border-top:0.5px solid var(--border);padding-top:10px;">
+            <div style="font-size:12px;color:var(--text2);margin-bottom:8px;">કઈ સૂચનાઓ મેળવવી:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-irrigation" checked onchange="saveNotifSubPref('irrigation',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                💧 પિયત સમય (આવતીકાલ + આજ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-harvest" checked onchange="saveNotifSubPref('harvest',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                🌾 લણણી નજીક (14 દિવસ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-payment" checked onchange="saveNotifSubPref('payment',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                💰 ચુકવણી બાકી (7+ દિવસ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-activity" checked onchange="saveNotifSubPref('activity',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                🌱 ખેત પ્રવૃત્તિ (overdue + આજ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-stage" checked onchange="saveNotifSubPref('stage',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                📋 તબક્કો નોંધ (નવો તબક્કો + 2 દિવસ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-lifecycle" checked onchange="saveNotifSubPref('lifecycle',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                🔄 જીવન ચક્ર (આવતીકાલની પ્રવૃત્તિ)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;">
+                <input type="checkbox" id="notif-health" checked onchange="saveNotifSubPref('health',this.checked)" style="accent-color:var(--green);width:16px;height:16px;"/>
+                🩺 સ્વાસ્થ્ય નોંધ (7 દિવસ પછી)
+              </label>
+            </div>
+            <button onclick="testNotification()" style="margin-top:12px;padding:8px 16px;background:var(--green-light);color:var(--green-dark);border:1.5px solid var(--green);border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;">🔔 ટેસ્ટ સૂચના મોકલો</button>
+          </div>
+          <div id="notif-status-msg" style="font-size:12px;color:var(--text2);margin-top:8px;"></div>
+        </div>
+
         <div class="err" id="pf-err"></div>
         <button class="btn btn-primary" onclick="saveProfile()" style="width:100%;padding:12px;font-size:15px;">✓ પ્રોફાઇલ સાચવો</button>
       </div>
@@ -2409,9 +2544,9 @@
           <!-- 6. ચૂ. -->
           <div class="il-row"><div class="il-lbl">ચુકવણી</div><div class="il-val">
             <select id="f-paystatus" onchange="toggleFertPaid()" style="flex:1;">
-              <option value="paid">✅ પૂ. ભ.</option>
-              <option value="partial">⚠️ અ. ભ.</option>
-              <option value="pending">⏳ બ.</option>
+              <option value="paid">✅ પૂરેપૂરી ચુકવણી</option>
+              <option value="partial">⚠️ અંશતઃ ચુકવણી</option>
+              <option value="pending">⏳ બાકી ચુકવણી</option>
             </select>
           </div></div>
           <div id="f-paid-wrap" style="display:none;" class="il-row">
@@ -2479,9 +2614,9 @@
           <!-- 6. ચૂ. -->
           <div class="il-row"><div class="il-lbl">ચુકવણી</div><div class="il-val">
             <select id="p-paystatus" onchange="togglePestPaid()" style="flex:1;">
-              <option value="paid">✅ પૂ. ભ.</option>
-              <option value="partial">⚠️ અ. ભ.</option>
-              <option value="pending">⏳ બ.</option>
+              <option value="paid">✅ પૂરેપૂરી ચુકવણી</option>
+              <option value="partial">⚠️ અંશતઃ ચુકવણી</option>
+              <option value="pending">⏳ બાકી ચુકવણી</option>
             </select>
           </div></div>
           <div id="p-paid-wrap" style="display:none;" class="il-row">
@@ -2653,7 +2788,7 @@
 
           <!-- 1. કામ * -->
           <div class="il-row"><div class="il-lbl">કામ *</div><div class="il-val">
-            <select id="c-worktype" style="flex:1;"><option>ખેડ</option><option>નીંદણ</option><option>ખાતર</option><option>છંટણી/પાતળું</option><option>રોપણી</option><option>લણણી</option><option>ઝૂડ</option><option>અન્ય</option></select>
+            <select id="c-worktype" style="flex:1;"><option>ખેડ</option><option>નીંદણ</option><option>સેન્દ્રિય ખાતર</option><option>છંટણી/પાતળું કરવું</option><option>રોપણી</option><option>લણણી</option><option>અન્ય કામ</option></select>
           </div></div>
 
           <!-- Hidden for save compatibility -->
@@ -2692,7 +2827,7 @@
         <div id="fld-equipment" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">સાધન *</div><div class="il-val"><input id="eq-used-name" placeholder="ટ્રેક્ટર, Sprayer..."/></div></div><div class="il-row"><div class="il-lbl">કુલ ₹ *</div><div class="il-val"><input id="eq-fl-cost" type="number" placeholder="0" style="flex:1;"/></div></div><div class="il-row"><div class="il-lbl">ચુકવણી</div><div class="il-val"><select id="eq-paystatus" onchange="toggleEqPaid()" style="flex:1;"><option value="paid">✅ પૂરેપૂરું ભરેલ</option><option value="partial">⚠️ અંશતઃ ભરેલ</option><option value="pending">⏳ બાકી</option></select></div></div><div id="eq-paid-wrap" style="display:none;" class="il-row"><div class="il-lbl">ભરેલ ₹</div><div class="il-val"><input id="eq-paid" type="number" placeholder="ભરેલ ₹"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">નોંધ / 📷</div><div class="il-val"><input id="eq-note-field" placeholder="નોંધ..." style="flex:1;"/><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openCamera('eq-photo-preview')">📷</button><button class="btn" style="font-size:12px;padding:6px 8px;width:auto;margin:0;" onclick="openFileUpload('eq-photo-preview')">📁</button></div></div><img id="eq-photo-preview" style="display:none;max-width:100%;max-height:120px;border-radius:var(--radius);margin:6px 0;" alt="preview"/><input type="hidden" id="eq-photo-data"/><input type="hidden" id="eq-hours" value="0"/><input type="hidden" id="eq-fuel" value="0"/><input type="hidden" id="eq-operator" value=""/></div></div>
 
         <!-- FARM WORK inline -->
-        <div id="fld-farmwork" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">કામ *</div><div class="il-val"><select id="fw-type"><option>મલ્ચિંગ (ઢાંકવું)</option>/option><option>ટપક સિંચાઈ</option><option>વાડ (ઘેરાવ)</option><option>સ. સ. (ઢાળ / સમતલ)</option><option>પાળ સ. (પાળાનું સમારકામ)</option><option>અન્ય માળખું (અન્ય માળખું)</option><option>અન્ય</option></select></div></div><div class="il-row"><div class="il-lbl">વ. / સામ.</div><div class="il-val"><input id="fw-area" type="number" placeholder="2.5 વ." style="flex:1;"/><input id="fw-material" placeholder="પ્લાસ્ટિક, વાયરોપણી.." style="flex:2;"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">કુલ ₹</div><div class="il-val"><input id="fw-cost" type="number" placeholder="0"/></div></div></div></div>
+        <div id="fld-farmwork" class="act-fields" style="display:none;"><div class="il-card"><div class="il-row"><div class="il-lbl">ખેતર કામ *</div><div class="il-val"><select id="fw-type"><option>મલ્ચિંગ (ઢાંકવું)</option><option>ટપક સિંચાઈ</option><option>વાડ (ઘેરાવ)</option><option>છંટણી/પાતળું કરવું</option><option>પાળાનું સમારકામ</option><option>અન્ય માળખું</option><option>અન્ય</option></select></div></div><div class="il-row"><div class="il-lbl">વિસ્તાર / સામગ્રી</div><div class="il-val"><input id="fw-area" type="number" placeholder="2.5 વ." style="flex:1;"/><input id="fw-material" placeholder="પ્લાસ્ટિક, વાયર..." style="flex:2;"/></div></div><div class="il-row" style="border-bottom:none;"><div class="il-lbl">કુલ ₹</div><div class="il-val"><input id="fw-cost" type="number" placeholder="0"/></div></div></div></div>
 
         <!-- OTHER FIELDS -->
         <div id="fld-other" class="act-fields" style="display:none;">
@@ -2713,7 +2848,7 @@
         </div>
 
         <div style="margin-top:14px;display:flex;gap:8px;">
-          <button class="btn btn-primary" onclick="saveFieldLog()" style="flex:1;">+ નવી સૂચના</button>
+          <button class="btn btn-primary" onclick="saveFieldLog()" style="flex:1;">✓ સાચવો</button>
         </div>
         <div class="err" id="al-err" style="margin-top:6px;"></div>
       </div>
@@ -2966,19 +3101,27 @@
           </div>
           <!-- Multi farm-lane selector -->
           <div class="fg" style="margin-bottom:12px;">
-            <label style="font-size:13px;font-weight:600;">ખેતર / લેન <span style="color:var(--red-dark);">*</span> <span style="font-size:11px;color:var(--text3);font-weight:400;">(ઓછ. 1 ફ. છ. — ઘટાડો ખેડ = ક્ષ.ફ. આ. ખેડ ભ.)</span></label>
+            <label style="font-size:13px;font-weight:600;">ખેતર / લેન <span style="color:var(--red-dark);">*</span> <span style="font-size:11px;color:var(--text3);font-weight:400;">(ઓછામાં ઓછું 1 ખેતર / લેન પસંદ કરો — વિસ્તાર પ્રમાણે ખર્ચ વહેંચાશે)</span></label>
             <div id="att-farm-lane-chips" style="display:flex;flex-wrap:wrap;gap:6px;padding:8px;background:var(--bg2);border-radius:var(--radius);min-height:36px;">
               <div class="loading" style="font-size:12px;">ખેતર ઉ. — Masters → Land</div>
             </div>
             <div style="font-size:11px;color:var(--text2);margin-top:4px;" id="att-split-hint"></div>
           </div>
           <div style="background:var(--bg2);border-radius:var(--radius);padding:12px;margin-bottom:12px;">
-            <div style="font-size:13px;font-weight:600;color:var(--text2);margin-bottom:10px;">બધા સક્રિય મજૂર — હાજરી નોંધ</div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
+              <div style="font-size:13px;font-weight:600;color:var(--text2);">બધા સક્રિય મજૂર — હાજરી નોંધ</div>
+              <div style="display:flex;gap:6px;flex-wrap:wrap;" id="bulk-att-btns">
+                <button onclick="bulkAttendance('present','full')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--green);background:var(--green-light);color:var(--green-dark);font-size:12px;font-weight:700;cursor:pointer;">✓ બધા હાજર</button>
+                <button onclick="bulkAttendance('present','half')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--amber);background:var(--amber-light);color:var(--amber-dark);font-size:12px;font-weight:700;cursor:pointer;">½ અડધો દિવસ</button>
+                <button onclick="bulkAttendance('absent','absent')" style="padding:6px 12px;border-radius:8px;border:1.5px solid var(--border2);background:var(--bg);color:var(--text2);font-size:12px;font-weight:700;cursor:pointer;">✕ બધા ગેરહાજર</button>
+              </div>
+            </div>
             <div id="att-sheet">
               <div class="loading">ઉપર તારીખ પસંદ કરો</div>
             </div>
           </div>
           <div class="fg" style="margin-bottom:12px;"><label>નોંધ</label><input id="att-note" placeholder="ઐ..."/></div>
+          <div id="att-err" style="display:none;margin-bottom:8px;padding:10px 14px;background:var(--red-light);border:1.5px solid var(--red);border-radius:var(--radius);color:var(--red-dark);font-size:13px;font-weight:600;"></div>
           <button class="btn btn-primary" onclick="saveAttendance()">✓ હાજરી સાચવો</button>
         </div>
 
@@ -3051,6 +3194,7 @@
             </div>
           </div>
           <div class="fg" style="margin-bottom:12px;"><label>નોંધ</label><input id="adv-note" placeholder="ઐ..."/></div>
+          <div id="adv-main-err" style="display:none;margin-bottom:8px;padding:10px 14px;background:var(--red-light);border:1.5px solid var(--red);border-radius:var(--radius);color:var(--red-dark);font-size:13px;font-weight:600;"></div>
           <button class="btn btn-primary" onclick="saveAdvance()">+ એડવાન્સ સાચવો</button>
         </div>
 
@@ -3453,7 +3597,7 @@ const PAGE_INIT = {
   irrigationtracker:()=>{ updateSelectsForPage('irrigationtracker'); renderIrrigationTracker(); },
   vendormaster:     ()=> renderVendors(),
   productmaster:    ()=>{ renderProducts(); updateProductSelects(); },
-  profile:          ()=>{ renderProfilePage(); loadProfileForm(); },
+  profile:          ()=>{ renderProfilePage(); loadProfileForm(); loadNotifPrefsUI(); },
   accounts:         ()=>{
     // Reset all filters to defaults on page open
     const farmSel=document.getElementById('acc-farm');
@@ -4044,7 +4188,7 @@ function renderMobDash(){
           <button onclick="openHarvestModal('${p.id}')" style="flex:1.2;background:var(--green);color:#fff;border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:600;cursor:pointer;">✓ લણણી</button>
           <button onclick="navToEditPlantation('${p.id}')" style="flex:1;background:var(--bg2);color:var(--text);border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:600;cursor:pointer;">✏ ફેરફાર</button>
           <button onclick="runAIAnalysis('${p.id}')" style="flex:1;background:var(--purple-light);color:var(--purple-dark);border:none;border-radius:8px;padding:8px;font-size:11px;font-weight:600;cursor:pointer;">🤖 AI</button>
-          <button onclick="markPlantationFailed('${p.id}')" style="flex:0.6;background:var(--red-light);color:var(--red-dark);border:none;border-radius:8px;padding:8px;font-size:11px;cursor:pointer;">✕</button>
+          <button onclick="markPlantationFailed('${p.id}')" style="flex:0.6;background:var(--red-light);color:var(--red-dark);border:none;border-radius:8px;padding:8px;font-size:11px;cursor:pointer;">✕ નિષ્ફળ</button>
         </div>
       </div>` : '';
 
@@ -5336,12 +5480,13 @@ let _fromPltId = '';
 let _fromPltCrop = '';
 
 const PLT_QL_LABELS = {
-  fertilisation:{title:'🧪 ખેડ ઉ.',name:'ખેડ ઉ.',bg:'#E8F5E9',clr:'#1B5E20'},
-  pesticide:    {title:'🐛 દ. ઉ.',name:'દ. ઉ.',bg:'#FFF3E0',clr:'#BF360C'},
-  irrigation:   {title:'💧 સ. ઉ.',name:'સ. ઉ.',bg:'#E3F2FD',clr:'#0D47A1'},
-  cultivation:  {title:'🌱 ખેડ ઉ.',name:'ખેડ ઉ.',bg:'#F3E5F5',clr:'#4A148C'},
-  equipment:    {title:'🔧 સ. ઉ.',name:'સ. ઉ.',bg:'#ECEFF1',clr:'#263238'},
-  other:        {title:'📝 ઉ.',name:'ઉ.',bg:'#FFF8E1',clr:'#E65100'}
+  fertilisation:{title:'\u{1F9EA} \u0A96\u0ABE\u0AA4\u0AB0\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0A96\u0ABE\u0AA4\u0AB0',bg:'#E8F5E9',clr:'#1B5E20'},
+  pesticide:    {title:'\u{1F41B} \u0AA6\u0AB5\u0ABE\u0A93\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0AA6\u0AB5\u0ABE',bg:'#FFF3E0',clr:'#BF360C'},
+  irrigation:   {title:'\u{1F4A7} \u0AAA\u0ABF\u0AAF\u0AA4\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0AAA\u0ABF\u0AAF\u0AA4',bg:'#E3F2FD',clr:'#0D47A1'},
+  cultivation:  {title:'\u{1F331} \u0A96\u0AC7\u0AA4\u0AC0\u0A95\u0ABE\u0AAE\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0A96\u0AC7\u0AA4\u0AC0\u0A95\u0ABE\u0AAE',bg:'#F3E5F5',clr:'#4A148C'},
+  farmwork:     {title:'\u{1F3D7} \u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE',bg:'#FBE9E7',clr:'#BF360C'},
+  equipment:    {title:'\u{1F527} \u0AB8\u0ABE\u0AA7\u0AA8\u0ACB\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0AB8\u0ABE\u0AA7\u0AA8',bg:'#ECEFF1',clr:'#263238'},
+  other:        {title:'\u{1F4DD} \u0A85\u0AA8\u0ACD\u0AAF \u0AB5\u0ABF\u0A97\u0AA4',name:'\u0A85\u0AA8\u0ACD\u0AAF',bg:'#FFF8E1',clr:'#E65100'}
 };
 
 function getPltQlFormHtml(type){
@@ -5381,7 +5526,7 @@ function getPltQlFormHtml(type){
         <select id="plt-ql-product" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">
           <option value="">-- ઉત્પાદન પસંદ કરો --</option>${fertOpts}
         </select>
-        <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct()">+ નવો</button>
+        <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct('plt-ql-product')">+ નવો</button>
       </div>
     </div>${qtyTotal}${pay}${note}`;
 
@@ -5391,7 +5536,7 @@ function getPltQlFormHtml(type){
         <select id="plt-ql-product" style="flex:1;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);">
           <option value="">-- ઉત્પાદન પસંદ કરો --</option>${pestOpts}
         </select>
-        <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct('plt-ql-product','pesticide')">+ નવો</button>
+        <button class="btn" style="width:auto;padding:10px 14px;margin:0;font-size:13px;flex-shrink:0;" onclick="openInlineProduct('plt-ql-product')">+ નવો</button>
       </div>
     </div>${qtyTotal}${pay}${note}`;
 
@@ -5427,12 +5572,12 @@ function getPltQlFormHtml(type){
 
   if(type==='farmwork') return `
     ${row2(
-      `<div>${lbl('ખેત કામ *',true)}<select id="plt-ql-fw-type" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);"><option>ભ. ખેડ</option><option>ન. સ.</option><option>ઊ. ગેરહાજર</option><option>ડ્રોપણી</option><option>પ. સ.</option><option>અન્ય</option></select></div>`,
-      `<div>${lbl('કુ. ₹ *',true)}${inp('plt-ql-total','0')}</div>`
+      `<div>${lbl('\u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE *',true)}<select id="plt-ql-fw-type" style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;background:var(--bg);"><option>\u0AAE\u0AB2\u0ACD\u0A9A\u0ABF\u0A82\u0A97 (\u0AA2\u0ABE\u0A82\u0A95\u0AB5\u0AC1\u0A82)</option><option>\u0A9F\u0AAA\u0A95 \u0AB8\u0ABF\u0A82\u0A9A\u0ABE\u0A88</option><option>\u0AB5\u0ABE\u0AA1 (\u0A98\u0AC7\u0AB0\u0ABE\u0AB5)</option><option>\u0A9B\u0A82\u0A9F\u0AA3\u0AC0/\u0AAA\u0ABE\u0AA4\u0AB3\u0AC1\u0A82 \u0A95\u0AB0\u0AB5\u0AC1\u0A82</option><option>\u0AAA\u0ABE\u0AB3\u0ABE\u0AA8\u0AC1\u0A82 \u0AB8\u0AAE\u0ABE\u0AB0\u0A95\u0ABE\u0AAE</option><option>\u0A85\u0AA8\u0ACD\u0AAF \u0AAE\u0ABE\u0AB3\u0A96\u0AC1\u0A82</option><option>\u0A85\u0AA8\u0ACD\u0AAF</option></select></div>`,
+      `<div>${lbl('\u0A95\u0AC1\u0AB2 \u20B9 *',true)}${inp('plt-ql-total','0')}</div>`
     )}
     ${row2(
-      `<div>${lbl('વિસ્તાર (વ.)',false)}${inp('plt-ql-fw-area','0','step="0.5"')}</div>`,
-      `<div>${lbl('સ.ગેરહાજર',false)}<input id="plt-ql-fw-material" placeholder="..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`
+      `<div>${lbl('\u0AB5\u0ABF\u0AB8\u0ACD\u0AA4\u0ABE\u0AB0 (\u0AB5\u0AC0\u0A98\u0ABE)',false)}${inp('plt-ql-fw-area','0','step="0.5"')}</div>`,
+      `<div>${lbl('\u0AB8\u0ABE\u0AAE\u0A97\u0ACD\u0AB0\u0AC0',false)}<input id="plt-ql-fw-material" placeholder="\u0AAA\u0ACD\u0AB2\u0ABE\u0AB8\u0ACD\u0A9F\u0ABF\u0A95, \u0AB5\u0ABE\u0AAF\u0AB0..." style="width:100%;padding:10px 12px;border:1.5px solid var(--border2);border-radius:8px;font-size:13px;"/></div>`
     )}${pay}${note}`;
   // other
   return `
@@ -5841,7 +5986,7 @@ function wizSavePlantation(){
   const _remArea=Math.round((farm.area-_usedArea)*100)/100;
   const _remIdx=D.lanes.findIndex(l=>l.farm===farm.name&&l.note==='remaining');
   if(_remIdx>=0) D.lanes.splice(_remIdx,1);
-  if(_remArea>0.01) D.lanes.push({farm:farm.name,name:'બાકી ભૂ.',area:_remArea,
+  if(_remArea>0.01) D.lanes.push({farm:farm.name,name:'બાકી જમીન',area:_remArea,
     soil:farm.soil||'ਗોરાડુ',irr:farm.irr||'ટ્યૂ.',
     status:'fallow',note:'remaining',addedOn:new Date().toISOString().split('T')[0]});
   D.plantations.push({
@@ -6029,14 +6174,14 @@ function saveEditLane(){
   const newArea=parseFloat(document.getElementById('edit-lane-area').value)||0;
   const err=document.getElementById('edit-lane-err');
   err.textContent='';
-  if(!newName){err.textContent='Lane નામ જરૂરી';return;}
+  if(!newName){err.textContent='⚠️ લેનનું નામ જરૂરી છે';return;}
   const farm=D.farms.find(f=>f.name===farmName);
   const otherLanes=D.lanes.filter(l=>l.farm===farmName&&l.name!==oldName);
   const usedByOthers=otherLanes.reduce((s,l)=>s+(l.area||0),0);
   const maxArea=farm?(farm.area||0)-usedByOthers:999;
   if(newArea>maxArea+0.001){err.textContent=`Max ${maxArea.toFixed(1)} વ. — ખેતર ઓળંગાઈ`;return;}
   if(newName!==oldName&&D.lanes.find(l=>l.farm===farmName&&l.name.toLowerCase()===newName.toLowerCase())){
-    err.textContent='આ Lane નામ પહેલેથી છે';return;
+    err.textContent='⚠️ આ લેનનું નામ પહેલેથી છે';return;
   }
   const idx=D.lanes.findIndex(l=>l.farm===farmName&&l.name===oldName);
   if(idx<0) return;
@@ -6088,7 +6233,7 @@ function addCrop(){
     // Preset lifecycle
     if(!cropKey){if(err) err.textContent='પાક પ્રકાર પસંદ કરો';return;}
     const lc=DEFAULT_CROP_LIFECYCLES[cropKey];
-    if(!lc){if(err) err.textContent='Life cycle મળ્યો નહીં';return;}
+    if(!lc){if(err) err.textContent='⚠️ જીવન ચક્ર મળ્યું નહીં';return;}
     cropName=cropKey;
     cropType=lc.cropType||'';
     stages=JSON.parse(JSON.stringify(lc.stages||[])); // deep copy
@@ -6155,7 +6300,7 @@ function moveAct(cropIdx,si,ai,dir){
 function saveStageEdit(cropIdx,si){
   const name=document.getElementById(`se-name-${cropIdx}-${si}`).value.trim();
   const days=parseInt(document.getElementById(`se-days-${cropIdx}-${si}`).value)||0;
-  if(!name||!days){alert('તબક્કો નામ અને Duration જરૂરી');return;}
+  if(!name||!days){alert('⚠️ તબક્કાનું નામ અને સમયગાળો જરૂરી છે');return;}
   D.crops[cropIdx].stages[si].name=name;
   D.crops[cropIdx].stages[si].days=days;
   D.crops[cropIdx].updated_at=new Date().toISOString();
@@ -6175,7 +6320,7 @@ function saveActEdit(cropIdx,si,ai){
   const name=document.getElementById(`ae-name-${cropIdx}-${si}-${ai}`).value.trim();
   const off=parseInt(document.getElementById(`ae-off-${cropIdx}-${si}-${ai}`).value)||0;
   const tip=document.getElementById(`ae-tip-${cropIdx}-${si}-${ai}`).value.trim();
-  if(!name){alert('Activity નામ જરૂરી');return;}
+  if(!name){alert('⚠️ પ્રવૃત્તિનું નામ જરૂરી છે');return;}
   const act=D.crops[cropIdx].stages[si].activities[ai];
   act.name=name; act.dayOffset=off; act.tip=tip;
   D.crops[cropIdx].updated_at=new Date().toISOString();
@@ -6679,15 +6824,20 @@ function editPlantation(pltId){
   // ઉ.
   // ઉ. section removed — old treatCost data preserved in data model only
   // Photos
-  const loadPhoto=(imgId,dataId,val)=>{
+  const loadPhoto=(imgId,dataId,val,n)=>{
     if(!val)return;
     const img=document.getElementById(imgId);const inp=document.getElementById(dataId);
     if(img){img.src=val;img.style.display='block';}
     if(inp)inp.value=val;
+    // Hide placeholder, show delete button
+    const ph=document.getElementById('plt-photo'+n+'-placeholder');
+    if(ph) ph.style.display='none';
+    const delBtn=document.getElementById('plt-photo'+n+'-del');
+    if(delBtn) delBtn.style.display='block';
   };
-  loadPhoto('plt-photo1-preview','plt-photo1-data',p.photo1||'');
-  loadPhoto('plt-photo2-preview','plt-photo2-data',p.photo2||'');
-  loadPhoto('plt-photo3-preview','plt-photo3-data',p.photo3||'');
+  loadPhoto('plt-photo1-preview','plt-photo1-data',p.photo1||'',1);
+  loadPhoto('plt-photo2-preview','plt-photo2-data',p.photo2||'',2);
+  loadPhoto('plt-photo3-preview','plt-photo3-data',p.photo3||'',3);
   if((p.photo1||p.photo2||p.photo3)){const pb=document.getElementById('plt-photos-body');if(pb)pb.style.display='block';}
   // Other costs
   pltCosts=(p.pltCosts||[]).map(c=>({...c}));
@@ -6922,7 +7072,7 @@ function writePlt(v, editId){
           const _ra=Math.round((_fObj2.area-_ua)*100)/100;
           const _ri=D.lanes.findIndex(l=>l.farm===v.farm&&l.note==='remaining');
           if(_ri>=0) D.lanes.splice(_ri,1);
-          if(_ra>0.01) D.lanes.push({farm:v.farm,name:'બાકી ભૂ.',area:_ra,
+          if(_ra>0.01) D.lanes.push({farm:v.farm,name:'બાકી જમીન',area:_ra,
             soil:_fObj2.soil||'ਗોરાડુ',irr:_fObj2.irr||'ટ્યૂ.',
             status:'fallow',note:'remaining',addedOn:localDateISO(new Date())});
         }
@@ -6969,7 +7119,7 @@ function savePlantation(silent=false){
   // 3. Write to data store
   const savedId=writePlt(v,editId);
   if(!savedId){
-    if(errEl) errEl.textContent='Plantation મળ્યું નહીં';
+    if(errEl) errEl.textContent='⚠️ વાવેતર મળ્યું નહીં — ફરી પ્રયાસ કરો';
     return;
   }
 
@@ -7036,9 +7186,13 @@ function resetPltForm(){
   const badge=document.getElementById('plt-edit-badge');if(badge)badge.style.display='none';
   const banner=document.getElementById('plt-edit-locked-banner');if(banner)banner.style.display='none';
   const saveBtn=document.getElementById('plt-save-btn');if(saveBtn)saveBtn.textContent='✓ વાવેતર સાચવો';
-  // Clear photos
-  ['plt-photo1-preview','plt-photo2-preview','plt-photo3-preview'].forEach(id=>{const e=document.getElementById(id);if(e){e.style.display='none';e.src='';}});
-  ['plt-photo1-data','plt-photo2-data','plt-photo3-data','plt-photo1-status','plt-photo2-status','plt-photo3-status'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+  // Clear photos — restore placeholders, hide delete buttons
+  ['plt-photo1-preview','plt-photo2-preview','plt-photo3-preview'].forEach(id=>{const e=document.getElementById(id);if(e){e.style.display='none';e.src='';}})
+  ;['plt-photo1-data','plt-photo2-data','plt-photo3-data','plt-photo1-status','plt-photo2-status','plt-photo3-status'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';})
+  ;[1,2,3].forEach(n=>{
+    const ph=document.getElementById('plt-photo'+n+'-placeholder');if(ph)ph.style.display='';
+    const del=document.getElementById('plt-photo'+n+'-del');if(del)del.style.display='none';
+  });
   const tw=document.getElementById('plt-treatment-wrap');if(tw)tw.style.display='none';
   updatePltCostTotal();
 }
@@ -7177,7 +7331,11 @@ function calcPltFinancials(pltId){
         const n=D.plantations.filter(p=>p.status!=='failed'&&p.farm===pf&&(!p.lane||p.lane==='')).length||1;
         splitLabour+=(l.amount||0)/n;
       } else if(ll&&!pl){
-        // Log is for a specific lane but plantation has no lane — skip.
+        // Log is for a specific lane but plantation has no lane.
+        // Split proportionally across all active plantations on this farm
+        // (plantation spans the whole farm, so it shares all lane-level labour).
+        const n=D.plantations.filter(p=>p.status!=='failed'&&p.farm===pf&&(!p.lane||p.lane==='')).length||1;
+        splitLabour+=(l.amount||0)/n;
       } else if(!ll&&pl){
         // Log has no lane but plantation has one — farm-wide log, split across laned plantations.
         const n=D.plantations.filter(p=>p.status!=='failed'&&p.farm===pf&&p.lane).length||1;
@@ -7424,70 +7582,412 @@ function renderPlantationList(){
   el.innerHTML=active.map(p=>{
     const crop=D.crops.find(c=>c.name===p.crop);
     const daysLeft=p.expectedHarvest?Math.round((new Date(p.expectedHarvest)-today)/86400000):null;
-    const daysStr=daysLeft!==null?(daysLeft<0?`<span style="color:var(--red-dark)">વ. (${Math.abs(daysLeft)}દ)</span>`:daysLeft<=14?`<span style="color:var(--amber)">${daysLeft} દ. બાકી</span>`:`<span style="color:var(--text2)">${daysLeft} દ. બાકી</span>`):'—';
     const sowDays=Math.round((today-new Date(p.sow))/86400000);
-    const statusColor=daysLeft!==null&&daysLeft<=7?'var(--red-dark)':daysLeft!==null&&daysLeft<=14?'var(--amber)':'var(--green-dark)';
-
-    // Live P&L
+    const statusColor=daysLeft!==null&&daysLeft<=7?'var(--red-dark)':daysLeft!==null&&daysLeft<=14?'var(--amber)':'var(--green)';
     const pl=getPltPL(p.id);
     const plColor=pl.netPL>0?'var(--green-dark)':pl.netPL<0?'var(--red-dark)':'var(--text2)';
-    const plSign=pl.netPL>0?'+':'';
-
-    // Current stage info — segmented clickable bar
     const si=getCurrentStageInfo(p);
-    const stageBar=si?buildStageBar(p.id, si, p):'';
+    const stageBar=si?buildStageBar(p.id,si,p):'';
 
-    return`<div class="card" style="margin-bottom:12px;border-left:4px solid ${statusColor};">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px;">
-        <div>
-          <div style="font-size:16px;font-weight:700;">${p.crop} ${p.variety?`<span style="font-size:13px;color:var(--text2);font-weight:400;">(${p.variety})</span>`:''}
+    // ── PHOTO GALLERY ─────────────────────────────────────
+    // Collect all photos: plantation photos + fieldLog photos
+    const photos=[];
+    // Plantation-level photos
+    if(p.photo1) photos.push({src:p.photo1,label:'\uD83C\uDF3E \u0A96\u0AC7\u0AA4\u0AB0 (\u0AB5\u0ABE\u0AB5\u0AA3\u0AC0 \u0AAA\u0AB9\u0AC7\u0AB2\u0ABE)',date:p.sow});
+    if(p.photo2) photos.push({src:p.photo2,label:'\uD83C\uDF31 \u0A96\u0AC7\u0AA4\u0AB0 (\u0AB5\u0ABE\u0AB5\u0AA3\u0AC0 \u0AAA\u0A9B\u0AC0)',date:p.sow});
+    if(p.photo3) photos.push({src:p.photo3,label:'\uD83D\uDCE6 \u0AAC\u0AC7\u0A9A / \u0AAC\u0ABF\u0AB2',date:p.sow});
+    // Field log photos
+    D.fieldLogs.filter(l=>l.pltId===p.id&&l.photoData).forEach(l=>{
+      const typeLabel={fertilisation:'\uD83E\uDEA7 \u0A96\u0ABE\u0AA4\u0AB0',pesticide:'\uD83D\uDC1B \u0AA6\u0AB5\u0ABE',cultivation:'\uD83C\uDF31 \u0A96\u0AC7\u0AA4\u0AC0\u0A95\u0ABE\u0AAE',sale:'\uD83D\uDCB0 \u0AB5\u0AC7\u0A9A\u0ABE\u0AA3',irrigation:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4',equipment:'\uD83D\uDD27 \u0AB8\u0ABE\u0AA7\u0AA8',other:'\uD83D\uDCDD \u0A85\u0AA8\u0ACD\u0AAF'}[l.type]||l.type;
+      photos.push({src:l.photoData,label:typeLabel,date:l.date,note:l.note||''});
+    });
+    // Irrigation session photos
+    D.fieldLogs.filter(l=>(l.type==='irrigation_record'||l.type==='irrigation')&&l.pltId===p.id).forEach(l=>{
+      (l.sessions||[]).forEach(s=>{ if(s.photoData) photos.push({src:s.photoData,label:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4',date:l.date||s.date||''}); });
+    });
+    // Sort by date descending
+    photos.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+    const photoCount=photos.length;
+    const photoThumb=photoCount>0?`
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(photoCount,4)},1fr);gap:4px;margin-top:8px;">
+        ${photos.slice(0,4).map((ph,pi)=>`
+          <div style="position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;cursor:pointer;background:var(--bg2);" onclick="openPhotoLightbox('${p.id}',${pi})">
+            <img src="${ph.src}" style="width:100%;height:100%;object-fit:cover;" alt="${ph.label}"/>
+            ${pi===3&&photoCount>4?`<div style="position:absolute;inset:0;background:rgba(0,0,0,0.55);display:flex;align-items:center;justify-content:center;color:#fff;font-size:16px;font-weight:700;">+${photoCount-4}</div>`:''}
+          </div>`).join('')}
+      </div>`:
+      `<div style="margin-top:8px;padding:12px;background:var(--bg2);border-radius:8px;text-align:center;color:var(--text3);font-size:12px;">📷 કોઈ ફોટો નથી — Field Log / Plantation માં ઉમેરો</div>`;
+
+    // ── GUJARATI TYPE LABELS ──────────────────────────────
+    const typeLabel={
+      fertilisation:'\uD83E\uDEA7 \u0A96\u0ABE\u0AA4\u0AB0',
+      pesticide:'\uD83D\uDC1B \u0AA6\u0AB5\u0ABE',
+      cultivation:'\uD83C\uDF31 \u0A96\u0AC7\u0AA4\u0AC0\u0A95\u0ABE\u0AAE',
+      sale:'\uD83D\uDCB0 \u0AB5\u0AC7\u0A9A\u0ABE\u0AA3',
+      irrigation:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4',
+      equipment:'\uD83D\uDD27 \u0AB8\u0ABE\u0AA7\u0AA8',
+      farmwork:'\uD83C\uDFD7 \u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE',
+      labour:'\uD83D\uDC77 \u0AAE\u0A9C\u0AC2\u0AB0\u0AC0',
+      advance:'\uD83D\uDCB8 \u0A8A\u0AA7\u0ABE\u0AB0',
+      other:'\uD83D\uDCDD \u0A85\u0AA8\u0ACD\u0AAF',
+      plantation_cost:'\uD83C\uDF31 \u0AB5\u0ABE\u0AB5\u0AC7\u0AA4\u0AB0 \u0A96\u0AB0\u0A9A'
+    };
+    const typeIcon={fertilisation:'\uD83E\uDEA7',pesticide:'\uD83D\uDC1B',cultivation:'\uD83C\uDF31',sale:'\uD83D\uDCB0',irrigation:'\uD83D\uDCA7',equipment:'\uD83D\uDD27',farmwork:'\uD83C\uDFD7',labour:'\uD83D\uDC77',advance:'\uD83D\uDCB8',other:'\uD83D\uDCDD',plantation_cost:'\uD83C\uDF31'};
+
+    // ── ALL TRANSACTIONS ──────────────────────────────────
+    const allLogs=D.fieldLogs.filter(l=>l.pltId===p.id&&l.type!=='plantation_cost')
+      .sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+
+    const txHtml=allLogs.length?allLogs.map((l,li)=>{
+      const isIncome=l.kind==='income';
+      const lbl=typeLabel[l.type]||l.type;
+      const amt=l.total||l.amount||0;
+      const pending=l.pending||0;
+      const detail=l.product||l.workType||l.equipName||l.activity||(l.workerCount?l.workerCount+' \u0AAE\u0A9C\u0AC2\u0AB0':'');
+      const hasPhoto=!!(l.photoData);
+      const canPhoto=!['labour','advance','plantation_cost'].includes(l.type);
+      // Photo column
+      const photoCol=hasPhoto
+        ?`<div onclick="event.stopPropagation();openTxPhotoLightbox('${p.id}','${l.id}')"
+            style="width:36px;height:36px;border-radius:6px;overflow:hidden;cursor:pointer;flex-shrink:0;border:0.5px solid var(--border2);">
+            <img src="${l.photoData}" style="width:100%;height:100%;object-fit:cover;" alt=""/>
+          </div>`
+        :(canPhoto
+          ?`<button onclick="event.stopPropagation();addPhotoToLog('${l.id}')"
+              title="\u0AAB\u0ACB\u0A9F\u0ACB \u0A89\u0AAE\u0AC7\u0AB0\u0ACB"
+              style="width:36px;height:36px;border-radius:6px;border:1px dashed var(--border2);background:transparent;color:var(--text3);font-size:14px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1;">📷</button>`
+          :'<div style="width:36px;"></div>');
+
+      return`<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:0.5px solid var(--border);">
+        <div style="flex:1;min-width:0;">
+          <div style="font-size:12px;font-weight:700;color:var(--text);">${lbl}</div>
+          <div style="font-size:10px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${l.date||''} ${detail?'· '+detail:''}</div>
+        </div>
+        ${photoCol}
+        <div style="text-align:right;flex-shrink:0;min-width:56px;">
+          <div style="font-size:13px;font-weight:700;color:${isIncome?'var(--green-dark)':'var(--red-dark)'};">${isIncome?'+':'-'}${fmt(amt)}</div>
+          ${pending>0?`<div style="font-size:10px;color:var(--amber-dark);">⏳${fmt(pending)}</div>`:''}
+        </div>
+      </div>`;
+    }).join(''):`<div style="color:var(--text3);font-size:12px;text-align:center;padding:16px;">\u0A95\u0ACB\u0A88 \u0AB5\u0ACD\u0AAF\u0AB5\u0AB9\u0ABE\u0AB0 \u0AA8\u0ACB\u0A82\u0AA7 \u0AA8\u0AA5\u0AC0</div>`;
+
+    // ── PHOTO TAB with amount labels ──────────────────────
+    const photoTabHtml=photoCount>0?`
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">
+        ${photos.map((ph,pi)=>`
+          <div style="cursor:pointer;" onclick="openPhotoLightbox('${p.id}',${pi})">
+            <div style="aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--bg2);position:relative;">
+              <img src="${ph.src}" style="width:100%;height:100%;object-fit:cover;" alt="${ph.label}"/>
+              <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(0,0,0,.6);padding:4px 6px;">
+                <div style="font-size:11px;color:#fff;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${ph.label}</div>
+                ${ph.amount?`<div style="font-size:11px;font-weight:800;color:${ph.isIncome?'#A5D6A7':'#EF9A9A'};">${ph.isIncome?'+':'-'}${fmt(ph.amount)}</div>`:''}
+              </div>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;text-align:center;font-weight:500;">${ph.date||''}</div>
+          </div>`).join('')}
+      </div>`:`<div style="text-align:center;padding:24px;color:var(--text3);">\uD83D\uDCF7 \u0A95\u0ACB\u0A88 \u0AAB\u0ACB\u0A9F\u0ACB \u0AA8\u0AA5\u0AC0<br><span style="font-size:11px;">Field Log \u0A89\u0AAE\u0AC7\u0AB0\u0AA4\u0AC0 \u0AB5\u0A96\u0AA4\u0AC7 \uD83D\uDCF7 \u0AAC\u0A9F\u0AA8 \u0AB5\u0ABE\u0AAA\u0AB0\u0ACB</span></div>`;
+
+    // ── COST BREAKDOWN BAR ────────────────────────────────
+    const totalExp=pl.expense||1;
+    const bars=[
+      {label:'\uD83C\uDF31 \u0AAC\u0ABF\u0AAF\u0ABE\u0AB0\u0AA3',val:pl.pltCost,color:'var(--blue)'},
+      {label:'\uD83E\uDEA7 \u0A96\u0ABE\u0AA4\u0AB0/\u0AA6\u0AB5\u0ABE',val:pl.fieldExp,color:'var(--green-dark)'},
+      {label:'\uD83D\uDC77 \u0AAE\u0A9C\u0AC2\u0AB0\u0AC0',val:pl.labourExp,color:'var(--amber-dark)'},
+      {label:'\uD83D\uDCA7 \u0AB8\u0ABF\u0A82\u0A9A\u0ABE\u0A88',val:pl.irrExp,color:'#00ACC1'},
+    ].filter(b=>b.val>0);
+
+    const expandKey='plt_expanded_'+p.id;
+    const detailTab=window['_pltDetailTab_'+p.id]||'summary';
+
+    return`<div class="card" style="margin-bottom:14px;border-left:4px solid ${statusColor};padding:0;overflow:hidden;" id="plt-card-${p.id}">
+
+      <!-- ── HEADER (always visible) ── -->
+      <div style="padding:14px 14px 10px;cursor:pointer;" onclick="togglePltCardDetail('${p.id}')">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:16px;font-weight:700;color:var(--text);">
+              ${p.crop} ${p.variety?`<span style="font-size:12px;color:var(--text2);font-weight:400;">(${p.variety})</span>`:''}
+              ${photoCount>0?`<span style="font-size:10px;background:var(--bg2);color:var(--text2);padding:1px 6px;border-radius:8px;margin-left:4px;">📷 ${photoCount}</span>`:''}
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;display:flex;gap:6px;flex-wrap:wrap;">
+              <span class="badge bb">${p.farm}</span>
+              ${p.lane?`<span class="badge ba">${p.lane}</span>`:''}
+              <span style="color:var(--text3);">📅 Day ${sowDays}</span>
+              ${daysLeft!==null?`<span style="color:${daysLeft<=14?'var(--amber-dark)':'var(--text3)'};">${daysLeft<=0?'\uD83D\uDEA8 \u0AB2\u0AA3\u0AA3\u0AC0 \u0AA5\u0AAF\u0AC0!':daysLeft+' \u0AA6\u0ABF. \u0AAC\u0ABE\u0A95\u0AC0'}</span>`:''}
+            </div>
           </div>
-          <div style="font-size:12px;color:var(--text2);margin-top:2px;">
-            <span class="badge bb">${p.farm}</span> / <span class="badge ba">${p.lane||'—'}</span>
-            ${crop?.cropType?`<span class="badge bpu" style="margin-left:4px;">${crop.cropType}</span>`:''}
+          <div style="text-align:right;flex-shrink:0;margin-left:10px;">
+            <div style="font-size:10px;color:var(--text3);">ચો. નફો/ખોટ</div>
+            <div style="font-size:17px;font-weight:800;color:${plColor};">${pl.netPL>=0?'+':''}${fmt(pl.netPL)}</div>
+            <div id="plt-card-chevron-${p.id}" style="font-size:12px;color:var(--text3);text-align:right;">${window['_pltExpanded_'+p.id]!==false?'▲':'▽'}</div>
           </div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:12px;color:var(--text2);">વાવ્યા: ${p.sow}</div>
-          <div style="font-size:12px;margin-top:2px;">${daysStr}</div>
-        </div>
+        ${stageBar}
       </div>
 
-      ${stageBar}
+      <!-- ── EXPANDABLE DETAIL ── -->
+      <div id="plt-card-detail-${p.id}" style="display:${window['_pltExpanded_'+p.id]!==false?'block':'none'};">
 
-      <!-- Quick metrics -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:10px;">
-        <div style="background:var(--bg2);border-radius:6px;padding:8px;text-align:center;">
-          <div style="font-size:10px;color:var(--text2);">Day / Area</div>
-          <div style="font-weight:700;font-size:13px;">${sowDays}d · ${p.area}v</div>
+        <!-- Sub-tabs -->
+        <div style="display:flex;border-top:0.5px solid var(--border);border-bottom:0.5px solid var(--border);background:var(--bg2);">
+          ${[['summary','\uD83D\uDCCA \u0AB8\u0ABE\u0AB0\u0ABE\u0A82\u0AB6','var(--green-dark)','var(--green-light)','var(--green)'],['photos','\uD83D\uDCF7 \u0AAB\u0ACB\u0A9F\u0ACB ('+photoCount+')','var(--blue-dark)','var(--blue-light)','var(--blue)'],['tx','\uD83D\uDCCB \u0AB5\u0ACD\u0AAF\u0AB5\u0AB9\u0ABE\u0AB0','var(--amber-dark)','var(--amber-light)','var(--amber)']].map(([key,label,ac,abg,ab])=>`
+            <button onclick="setPltDetailTab('${p.id}','${key}')" id="plt-dtab-${p.id}-${key}"
+              style="flex:1;padding:8px 4px;border:none;background:${detailTab===key?abg:'transparent'};font-size:12px;font-weight:${detailTab===key?'700':'500'};color:${detailTab===key?ac:'var(--text2)'};cursor:pointer;border-bottom:2px solid ${detailTab===key?ab:'transparent'};transition:all .15s;">
+              ${label}
+            </button>`).join('')}
         </div>
-        <div style="background:var(--red-light);border-radius:6px;padding:8px;text-align:center;">
-          <div style="font-size:10px;color:var(--red-dark);font-weight:600;">Total ખર્ચ</div>
-          <div style="font-weight:700;font-size:13px;color:var(--red-dark);">${fmt(pl.expense)}</div>
-          <div style="font-size:10px;color:var(--text3);">બ: ${fmt(pl.pltCost)} · ખ: ${fmt(pl.fieldExp)}</div>
-        </div>
-        <div style="background:var(--green-light);border-radius:6px;padding:8px;text-align:center;">
-          <div style="font-size:10px;color:var(--green-dark);font-weight:600;">Income (Sale)</div>
-          <div style="font-weight:700;font-size:13px;color:var(--green-dark);">${fmt(pl.income)}</div>
-          ${pl.yieldKg?`<div style="font-size:10px;color:var(--text3);">${pl.yieldKg}kg sold</div>`:'<div style="font-size:10px;color:var(--text3);">No sale yet</div>'}
-        </div>
-        <div style="background:${pl.netPL>=0?'var(--green-light)':'var(--red-light)'};border-radius:6px;padding:8px;text-align:center;border:1.5px solid ${pl.netPL>=0?'var(--green)':'var(--red)'};">
-          <div style="font-size:10px;font-weight:700;color:${plColor};">ચોખ્ખો નફો/ખોટ</div>
-          <div style="font-weight:800;font-size:14px;color:${plColor};">${plSign}${fmt(Math.abs(pl.netPL))}</div>
-          ${pl.pendingIncome?`<div style="font-size:10px;color:var(--amber-dark);">⏳${fmt(pl.pendingIncome)} pending</div>`:''}
-        </div>
-      </div>
 
-      <div style="display:flex;gap:8px;">
-        <button class="btn" style="background:#F0EDFF;color:#3C3489;border-color:#3C3489;flex:1;" onclick="runAIAnalysis('${p.id}')">🤖 AI</button>
-        <button class="btn" style="flex:1;" onclick="editPlantation('${p.id}')">✏️ Edit</button>
-        <button class="btn btn-primary" style="flex:1;" onclick="openHarvestModal('${p.id}')">✓ લણણી</button>
-        <button class="btn" style="flex:1;" onclick="markPlantationFailed('${p.id}')">✕ નિષ્ફળ</button>
-        <button class="delbtn" onclick="deletePlantation('${p.id}')">✕</button>
-      </div>
+        <!-- SUMMARY TAB -->
+        <div id="plt-dtab-content-${p.id}-summary" style="padding:12px 14px;display:${detailTab==='summary'?'block':'none'};">
+          <!-- P&L row -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px;">
+            <div style="background:var(--red-light);border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:10px;color:var(--red-dark);font-weight:700;">↓ કુલ ખર્ચ</div>
+              <div style="font-size:16px;font-weight:800;color:var(--red-dark);">${fmt(pl.expense)}</div>
+              <div style="font-size:10px;color:var(--text3);">${p.area}v · ₹${Math.round(pl.expense/(p.area||1))}/v</div>
+            </div>
+            <div style="background:var(--green-light);border-radius:8px;padding:10px;text-align:center;">
+              <div style="font-size:10px;color:var(--green-dark);font-weight:700;">↑ આવક</div>
+              <div style="font-size:16px;font-weight:800;color:var(--green-dark);">${fmt(pl.income)}</div>
+              ${pl.yieldKg?`<div style="font-size:10px;color:var(--text3);">${pl.yieldKg}kg · ₹${pl.yieldKg?Math.round(pl.income/pl.yieldKg):0}/kg</div>`:`<div style="font-size:10px;color:var(--text3);">વેચાણ બાકી</div>`}
+            </div>
+            <div style="background:${pl.netPL>=0?'var(--green-light)':'var(--red-light)'};border-radius:8px;padding:10px;text-align:center;border:2px solid ${pl.netPL>=0?'var(--green)':'var(--red)'};">
+              <div style="font-size:10px;font-weight:700;color:${plColor};">ચો. નફો/ખોટ</div>
+              <div style="font-size:16px;font-weight:800;color:${plColor};">${pl.netPL>=0?'+':''}${fmt(pl.netPL)}</div>
+              ${pl.pendingIncome?`<div style="font-size:10px;color:var(--amber-dark);">⏳${fmt(pl.pendingIncome)} બાકી</div>`:''}
+            </div>
+          </div>
+          <!-- Cost breakdown bars -->
+          ${bars.length?`<div style="margin-bottom:12px;">
+            <div style="font-size:11px;font-weight:700;color:var(--text2);margin-bottom:6px;">ખર્ચ વિગત</div>
+            ${bars.map(b=>`<div style="margin-bottom:5px;">
+              <div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px;">
+                <span style="color:var(--text2);">${b.label}</span>
+                <span style="font-weight:700;">${fmt(b.val)}</span>
+              </div>
+              <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden;">
+                <div style="height:6px;background:${b.color};border-radius:3px;width:${Math.min(100,Math.round(b.val/totalExp*100))}%;transition:width .5s;"></div>
+              </div>
+            </div>`).join('')}
+          </div>`:''}
+          <!-- Action buttons -->
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button class="btn" style="background:#F0EDFF;color:#3C3489;border-color:#3C3489;flex:1;min-width:80px;" onclick="runAIAnalysis('${p.id}')">🤖 AI</button>
+            <button class="btn" style="flex:1;min-width:80px;" onclick="editPlantation('${p.id}')">✏️ ફેરફાર</button>
+            <button class="btn btn-primary" style="flex:1;min-width:80px;" onclick="openHarvestModal('${p.id}')">✓ લણણી</button>
+            <button class="btn" style="flex:1;min-width:80px;" onclick="markPlantationFailed('${p.id}')">✕ નિષ્ફળ</button>
+          </div>
+        </div>
+
+        <!-- PHOTO TAB -->
+        <div id="plt-dtab-content-${p.id}-photos" style="padding:12px 14px;display:${detailTab==='photos'?'block':'none'};">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:12px;color:var(--text2);">${photoCount} ફોટો</div>
+            <button onclick="editPlantation('${p.id}')" style="font-size:11px;padding:4px 10px;background:var(--green-light);color:var(--green-dark);border:1px solid var(--green);border-radius:8px;cursor:pointer;">+ ફોટો ઉ.</button>
+          </div>
+          ${photoTabHtml}
+        </div>
+
+        <!-- TRANSACTIONS TAB -->
+        <div id="plt-dtab-content-${p.id}-tx" style="padding:12px 14px;display:${detailTab==='tx'?'block':'none'};">
+          <div style="font-size:11px;color:var(--text2);margin-bottom:8px;">${allLogs.length} વ્યવહાર · 📷 = ફોટો છે · dashed = ફોટો ઉમેરો</div>
+          <div style="max-height:420px;overflow-y:auto;">
+            ${txHtml}
+          </div>
+        </div>
+
+      </div><!-- end detail -->
     </div>`;
   }).join('');
+
+  // Store photo data for lightbox (enriched with amount)
+  window._pltPhotos = {};
+  window._pltLogPhotos = {}; // keyed by logId for tx-row lightbox
+  active.forEach(p=>{
+    const photos=[];
+    if(p.photo1) photos.push({src:p.photo1,label:'\uD83C\uDF3E \u0A96\u0AC7\u0AA4\u0AB0 (\u0AB5\u0ABE\u0AB5\u0AA3\u0AC0 \u0AAA\u0AB9\u0AC7\u0AB2\u0ABE)',date:p.sow});
+    if(p.photo2) photos.push({src:p.photo2,label:'\uD83C\uDF31 \u0A96\u0AC7\u0AA4\u0AB0 (\u0AB5\u0ABE\u0AB5\u0AA3\u0AC0 \u0AAA\u0A9B\u0AC0)',date:p.sow});
+    if(p.photo3) photos.push({src:p.photo3,label:'\uD83D\uDCE6 \u0AAC\u0AC7\u0A9A/\u0AAC\u0ABF\u0AB2',date:p.sow});
+    D.fieldLogs.filter(l=>l.pltId===p.id&&l.photoData).forEach(l=>{
+      const lbl={fertilisation:'\uD83E\uDEA7 \u0A96\u0ABE\u0AA4\u0AB0',pesticide:'\uD83D\uDC1B \u0AA6\u0AB5\u0ABE',cultivation:'\uD83C\uDF31 \u0A96\u0AC7\u0AA4\u0AC0\u0A95\u0ABE\u0AAE',sale:'\uD83D\uDCB0 \u0AB5\u0AC7\u0A9A\u0ABE\u0AA3',irrigation:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4',equipment:'\uD83D\uDD27 \u0AB8\u0ABE\u0AA7\u0AA8',farmwork:'\uD83C\uDFD7 \u0A96\u0AC7\u0AA4\u0AB0 \u0A95\u0ABE\u0AAE',other:'\uD83D\uDCDD \u0A85\u0AA8\u0ACD\u0AAF'}[l.type]||l.type;
+      const ph={src:l.photoData,label:lbl,date:l.date,note:l.note||'',logId:l.id,amount:l.total||l.amount||0,isIncome:l.kind==='income'};
+      photos.push(ph);
+      window._pltLogPhotos[l.id]=ph;
+    });
+    D.fieldLogs.filter(l=>(l.type==='irrigation_record'||l.type==='irrigation')&&l.pltId===p.id).forEach(l=>{
+      (l.sessions||[]).forEach(s=>{ if(s.photoData) photos.push({src:s.photoData,label:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4',date:l.date||s.date||''}); });
+    });
+    photos.sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+    window._pltPhotos[p.id]=photos;
+  });
 }
+
+// ── PLANTATION CARD EXPAND/COLLAPSE ──────────────────────────────
+function togglePltCardDetail(pltId){
+  const exp=!window['_pltExpanded_'+pltId];
+  window['_pltExpanded_'+pltId]=exp;
+  const det=document.getElementById('plt-card-detail-'+pltId);
+  const chev=document.getElementById('plt-card-chevron-'+pltId);
+  if(det) det.style.display=exp?'block':'none';
+  if(chev) chev.textContent=exp?'▲':'▽';
+}
+
+// ── PLANTATION DETAIL SUB-TABS ────────────────────────────────────
+function setPltDetailTab(pltId,tab){
+  window['_pltDetailTab_'+pltId]=tab;
+  const tabColors={summary:['var(--green-dark)','var(--green-light)','var(--green)'],photos:['var(--blue-dark)','var(--blue-light)','var(--blue)'],tx:['var(--amber-dark)','var(--amber-light)','var(--amber)']};
+  ['summary','photos','tx'].forEach(t=>{
+    const btn=document.getElementById('plt-dtab-'+pltId+'-'+t);
+    const content=document.getElementById('plt-dtab-content-'+pltId+'-'+t);
+    const isActive=t===tab;
+    const [ac,abg,ab]=tabColors[t]||['var(--green-dark)','var(--green-light)','var(--green)'];
+    if(btn){
+      btn.style.background=isActive?abg:'transparent';
+      btn.style.fontWeight=isActive?'700':'500';
+      btn.style.color=isActive?ac:'var(--text2)';
+      btn.style.borderBottomColor=isActive?ab:'transparent';
+    }
+    if(content) content.style.display=isActive?'block':'none';
+  });
+}
+
+// ── PHOTO LIGHTBOX ────────────────────────────────────────────────
+function openPhotoLightbox(pltId, idx){
+  const photos=window._pltPhotos?.[pltId]||[];
+  if(!photos.length) return;
+  window._lbPhotos=photos;
+  window._lbIdx=idx;
+  _renderLightbox();
+  document.getElementById('photo-lightbox').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+function _renderLightbox(){
+  const photos=window._lbPhotos||[];
+  const idx=window._lbIdx||0;
+  const ph=photos[idx];
+  if(!ph) return;
+  const lb=document.getElementById('photo-lightbox');
+  if(!lb) return;
+  lb.innerHTML=`
+    <div style="position:relative;max-width:96vw;max-height:92vh;display:flex;flex-direction:column;align-items:center;">
+      <!-- Close -->
+      <button onclick="closePhotoLightbox()" style="position:absolute;top:-14px;right:-14px;z-index:10;width:32px;height:32px;border-radius:50%;background:#fff;border:none;font-size:18px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3);">✕</button>
+      <!-- Image -->
+      <img src="${ph.src}" style="max-width:96vw;max-height:75vh;object-fit:contain;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.5);" alt="${ph.label}"/>
+      <!-- Caption -->
+      <div style="margin-top:10px;text-align:center;color:#fff;">
+        <div style="font-size:14px;font-weight:700;">${ph.label}</div>
+        <div style="font-size:12px;opacity:.8;">${ph.date||''} ${ph.note?'· '+ph.note:''}</div>
+        <div style="font-size:11px;opacity:.6;margin-top:4px;">${idx+1} / ${photos.length}</div>
+      </div>
+      <!-- Prev/Next -->
+      ${photos.length>1?`<div style="display:flex;gap:16px;margin-top:12px;">
+        <button onclick="lbNav(-1)" style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);font-size:13px;cursor:pointer;">← પહેલો</button>
+        <button onclick="lbNav(1)"  style="padding:8px 20px;border-radius:8px;background:rgba(255,255,255,.2);color:#fff;border:1px solid rgba(255,255,255,.4);font-size:13px;cursor:pointer;">આગળ →</button>
+      </div>`:''}
+    </div>`;
+}
+
+function lbNav(dir){
+  const photos=window._lbPhotos||[];
+  window._lbIdx=((window._lbIdx||0)+dir+photos.length)%photos.length;
+  _renderLightbox();
+}
+
+function closePhotoLightbox(){
+  const lb=document.getElementById('photo-lightbox');
+  if(lb) lb.style.display='none';
+  document.body.style.overflow='';
+}
+
+// Open lightbox for a specific transaction's photo
+function openTxPhotoLightbox(pltId, logId){
+  const photos=window._pltPhotos?.[pltId]||[];
+  const idx=photos.findIndex(ph=>ph.logId===logId);
+  if(idx>=0){ openPhotoLightbox(pltId, idx); }
+  else {
+    const ph=window._pltLogPhotos?.[logId];
+    if(ph){
+      window._lbPhotos=[ph];
+      window._lbIdx=0;
+      _renderLightbox();
+      document.getElementById('photo-lightbox').style.display='flex';
+      document.body.style.overflow='hidden';
+    }
+  }
+}
+
+// Show photo from field log list (direct lightbox)
+function _flShowPhoto(realIdx){
+  const l=D.fieldLogs[realIdx];
+  if(!l||!l.photoData) return;
+  window._lbPhotos=[{src:l.photoData,label:l.type,date:l.date,note:l.note||''}];
+  window._lbIdx=0;
+  _renderLightbox();
+  document.getElementById('photo-lightbox').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+// Direct photo add to a field log — no page navigation needed
+function addPhotoToLog(logId){
+  const input=document.createElement('input');
+  input.type='file'; input.accept='image/*';
+  input.onchange=e=>{
+    const file=e.target.files[0];
+    if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const log=D.fieldLogs.find(l=>l.id===logId);
+      if(!log) return;
+      const img=new Image();
+      img.onload=()=>{
+        const MAX=800;
+        const canvas=document.createElement('canvas');
+        let w=img.width,h=img.height;
+        if(w>MAX||h>MAX){ const r=Math.min(MAX/w,MAX/h); w=Math.round(w*r); h=Math.round(h*r); }
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        log.photoData=canvas.toDataURL('image/jpeg',0.75);
+        saveData();
+        renderPlantationList();
+        renderFieldLogs();
+        _showPhotoToast(logId);
+      };
+      img.src=ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  };
+  input.click();
+}
+
+// Toast shown after photo added inline — with delete + replace options
+function _showPhotoToast(logId){
+  const old=document.getElementById('photo-toast-'+logId);
+  if(old) old.remove();
+  const toast=document.createElement('div');
+  toast.id='photo-toast-'+logId;
+  toast.style.cssText='position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#1B5E20;color:#fff;padding:8px 14px;border-radius:20px;font-size:13px;font-weight:700;z-index:9999;display:flex;align-items:center;gap:8px;white-space:nowrap;box-shadow:0 2px 12px rgba(0,0,0,.3);';
+  toast.innerHTML=`<span>\u2705 \u0AAB\u0ACB\u0A9F\u0ACB \u0AB8\u0A9A\u0AB5\u0ABE\u0AAF\u0ACB</span>
+    <button onclick="deletePhotoFromLog('${logId}');document.getElementById('photo-toast-${logId}')?.remove()"
+      style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:10px;padding:3px 9px;font-size:11px;cursor:pointer;">🗑 દૂર</button>
+    <button onclick="addPhotoToLog('${logId}');document.getElementById('photo-toast-${logId}')?.remove()"
+      style="background:rgba(255,255,255,.2);border:1px solid rgba(255,255,255,.4);color:#fff;border-radius:10px;padding:3px 9px;font-size:11px;cursor:pointer;">\uD83D\uDD04 \u0AAC\u0AA6\u0AB2\u0ACB</button>`;
+  document.body.appendChild(toast);
+  setTimeout(()=>{ if(toast.parentNode) toast.remove(); },6000);
+}
+
+function deletePhotoFromLog(logId){
+  const log=D.fieldLogs.find(l=>l.id===logId);
+  if(!log) return;
+  log.photoData='';
+  saveData();
+  renderPlantationList();
+  renderFieldLogs();
+}
+
+
 
 function renderPlantationHistory(){
   const ff=document.getElementById('plt-filter-farm')?document.getElementById('plt-filter-farm').value:'';
@@ -7536,7 +8036,7 @@ function renderPlantationHistory(){
 
 function deleteHistoryPlantation(ri){
   const p=D.plantations[ri];
-  if(!p||p.status==='active'){alert('સક્રિય plantation remove ન કરી શકાય');return;}
+  if(!p||p.status==='active'){alert('⚠️ સક્રિય વાવેતર દૂર કરી શકાય નહીં');return;}
   if(!confirm(`"${p.crop}" (${p.status}) record કાઢી નાખો?`)) return;
   D.plantations.splice(ri,1);
   saveData();
@@ -7563,7 +8063,7 @@ function saveHarvest(){
   const idx=D.plantations.findIndex(p=>p.id===id);
   if(idx<0) return;
   const kg=parseFloat(document.getElementById('harvest-kg').value)||0;
-  if(!kg){alert('ઉત્પાદન કિ.ગ્રા. જરૂરી');return;}
+  if(!kg){alert('⚠️ ઉત્પાદન (કિ.ગ્રા.) ભરવું જરૂરી છે');return;}
   D.plantations[idx].status='harvested';
   D.plantations[idx].updated_at=new Date().toISOString();
   D.plantations[idx].harvestDate=document.getElementById('harvest-date').value;
@@ -7820,7 +8320,7 @@ function addSaleGrade(){
   const qty=parseFloat(document.getElementById('s-grade-qty').value)||0;
   const rate=parseFloat(document.getElementById('s-grade-rate').value)||0;
   const errEl=document.getElementById('s-grade-err');
-  if(!qty||!rate){errEl.textContent='Qty અને Rate ભરો';return;}
+  if(!qty||!rate){errEl.textContent='⚠️ જથ્થો અને ભાવ ભરો';return;}
   errEl.textContent='';
   saleGrades.push({name,qty,rate,amt:qty*rate});
   document.getElementById('s-grade-name').value='';
@@ -7960,12 +8460,12 @@ function saveFieldLog(){
     : document.getElementById('al-date').value;
   const err=document.getElementById('al-err');
   err.textContent='';
-  if(!currentActType){err.textContent='Activity type પસંદ કરો';return;}
+  if(!currentActType){err.textContent='⚠️ પ્રવૃત્તિ પ્રકાર પસંદ કરો';return;}
 
   // ── Date validation: must be present, valid, and not in the future
   if(!date){err.textContent='તારીખ ભરો';return;}
   const _dateObj=new Date(date);
-  if(isNaN(_dateObj.getTime())){err.textContent='તારીખ માન્ય નથી (YYYY-MM-DD)';return;}
+  if(isNaN(_dateObj.getTime())){err.textContent='⚠️ તારીખ માન્ય નથી';return;}
   // Compare date strings (YYYY-MM-DD) not Date objects to avoid IST UTC offset bug:
   // new Date('2025-01-15') = midnight UTC = 5:30 AM IST, so today's date would be
   // wrongly rejected as "future" when entered before 5:30 AM local time.
@@ -7983,9 +8483,9 @@ function saveFieldLog(){
     cropName=plt2?plt2.crop:'';
   } else {
     pltId=document.getElementById('al-plt').value;
-    if(!pltId){err.textContent='Plantation પસંદ કરો';return;}
+    if(!pltId){err.textContent='⚠️ વાવેતર પસંદ કરો';return;}
     const plt=D.plantations.find(p=>p.id===pltId);
-    if(!plt){err.textContent='Plantation મળ્યું નથી — ફરી પસંદ કરો';return;}
+    if(!plt){err.textContent='⚠️ વાવેતર મળ્યું નથી — ફરી પસંદ કરો';return;}
     farm=plt.farm;lane=plt.lane;cropName=plt.crop;
   }
   const base={id:'fl_'+Date.now(),module:'crop',type:currentActType,updated_at:new Date().toISOString(),
@@ -7996,7 +8496,7 @@ function saveFieldLog(){
     const prodSel=document.getElementById('f-product-sel').value;
     const prod=D.products.find(p=>p.id===prodSel);
     const productName=prod?prod.name:(document.getElementById('f-company').value||'');
-    if(!productName){err.textContent='Product પસંદ કરો';return;}
+    if(!productName){err.textContent='⚠️ ઉત્પાદન પસંદ કરો';return;}
     const batch=document.getElementById('f-batch')?.value.trim()||'';
     const qty=parseFloat(document.getElementById('f-qty').value)||0;
     const total=parseFloat(document.getElementById('f-total').value)||0;
@@ -8020,7 +8520,7 @@ function saveFieldLog(){
     const prodSel=document.getElementById('p-product-sel').value;
     const prod=D.products.find(p=>p.id===prodSel);
     const productName=prod?prod.name:(document.getElementById('p-company').value||'');
-    if(!productName){err.textContent='Product પસંદ કરો';return;}
+    if(!productName){err.textContent='⚠️ ઉત્પાદન પસંદ કરો';return;}
     const batch=document.getElementById('p-batch')?.value.trim()||'';
     const qty=parseFloat(document.getElementById('p-qty').value)||0;
     const total=parseFloat(document.getElementById('p-cost').value)||0;
@@ -8046,7 +8546,7 @@ function saveFieldLog(){
   } else if(currentActType==='sale'){
     const vendorId=document.getElementById('s-vendor').value;
     // Vendor optional — farmer may sell at mandi without a named buyer
-    if(!saleGrades.length){err.textContent='ઓછામાં ઓછો 1 ગેરહાજર/Lot ઉમેરો';return;}
+    if(!saleGrades.length){err.textContent='⚠️ ઓછામાં ઓછો 1 ગ્રેડ/લોટ ઉમેરો';return;}
     const totalQty=saleGrades.reduce((s,g)=>s+g.qty,0);
     const grossAmt=saleGrades.reduce((s,g)=>s+g.amt,0);
     const totalCosts=saleCosts.reduce((s,c)=>s+c.amt,0);
@@ -8087,6 +8587,8 @@ function saveFieldLog(){
       labourCount:parseFloat(document.getElementById('c-labour').value)||0,
       hours:parseFloat(document.getElementById('c-hours').value)||0,
       equipUsed:document.getElementById('c-equip').value,
+      photoData:document.getElementById('c-photo-data')?.value||'',
+      note:document.getElementById('c-note-field')?.value||'',
       kind:'expense',amount:cultCost};
   } else if(currentActType==='equipment'){
     const eqCost=parseFloat(document.getElementById('eq-fl-cost')?.value||document.getElementById('eq-cost')?.value)||0;
@@ -8098,6 +8600,8 @@ function saveFieldLog(){
       hours:eqHoursEl?parseFloat(eqHoursEl.value)||0:0,
       fuel:eqFuelEl?parseFloat(eqFuelEl.value)||0:0,
       operator:eqOpEl?eqOpEl.value:'',
+      photoData:document.getElementById('eq-photo-data')?.value||'',
+      note:document.getElementById('eq-note-field')?.value||'',
       kind:'expense',amount:eqCost};
   } else if(currentActType==='farmwork'){
     const fwCost=parseFloat(document.getElementById('fw-cost').value)||0;
@@ -8191,7 +8695,7 @@ function renderFieldLogs(){
       if(l.product) p.push(l.product);
       if(l.qty&&l.unit) p.push(l.qty+l.unit);
       if(l.fertType) p.push(l.fertType);
-      if(l.paystatus==='pending') p.push('⏳ બ.');
+      if(l.paystatus==='pending') p.push('⏳ ચુકવણી બાકી');
       else if(l.paystatus==='partial') p.push('⚠ અન્યભ.');
       return p.join(' · ');
     }
@@ -8200,7 +8704,7 @@ function renderFieldLogs(){
       if(l.product) p.push(l.product);
       if(l.qty&&l.unit) p.push(l.qty+l.unit);
       if(l.target) p.push('→ '+l.target);
-      if(l.paystatus==='pending') p.push('⏳ બ.');
+      if(l.paystatus==='pending') p.push('⏳ ચુકવણી બાકી');
       return p.join(' · ');
     }
     if(l.type==='irrigation'){
@@ -8236,6 +8740,17 @@ function renderFieldLogs(){
     const amtSign=l.kind==='income'?'+':'-';
     const farmLane=[l.farm,l.lane].filter(Boolean).join(' / ');
     const cropName=getCropName(l);
+    const canPhoto=!['labour','advance','plantation_cost','attendance'].includes(l.type);
+    const photoCol=l.photoData
+      ?`<div onclick="event.stopPropagation();_flShowPhoto('${realIdx}')"
+          style="width:34px;height:34px;border-radius:6px;overflow:hidden;cursor:pointer;flex-shrink:0;border:0.5px solid var(--border2);">
+          <img src="${l.photoData}" style="width:100%;height:100%;object-fit:cover;" alt=""/>
+        </div>`
+      :(canPhoto
+        ?`<button onclick="event.stopPropagation();addPhotoToLog('${l.id}')"
+            title="\u0AAB\u0ACB\u0A9F\u0ACB \u0A89\u0AAE\u0AC7\u0AB0\u0ACB"
+            style="width:34px;height:34px;border-radius:6px;border:1px dashed var(--border2);background:transparent;color:var(--text3);font-size:13px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;line-height:1;">📷</button>`
+        :'');
     return`<div style="display:flex;align-items:center;gap:8px;padding:9px 10px;border-bottom:0.5px solid var(--border);border-left:3px solid ${border};">
       <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0;">${icon}</div>
       <div style="flex:1;min-width:0;">
@@ -8245,6 +8760,7 @@ function renderFieldLogs(){
         </div>
         ${detail?`<div style="font-size:11px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${detail}</div>`:''}
       </div>
+      ${photoCol}
       <div style="flex-shrink:0;text-align:right;min-width:56px;">
         ${amt?`<div style="font-size:12px;font-weight:700;color:${amtColor};">${amtSign}${amt}</div>`:''}
         <div style="font-size:10px;color:var(--text3);">${fmtDate(l.date)}</div>
@@ -8310,7 +8826,7 @@ const PRODUCT_TYPES={fertiliser:'🧪 ખેડ',pesticide:'🐛 દ.',herbicide
 function addProduct(){
   const name=document.getElementById('pm-name').value.trim();
   const err=document.getElementById('pm-err');
-  if(!name){err.textContent='Product નામ જરૂરી';return;}
+  if(!name){err.textContent='⚠️ ઉત્પાદનનું નામ જરૂરી છે';return;}
   if(D.products.find(p=>p.name.toLowerCase()===name.toLowerCase())){err.textContent='Product પહેલેથી છે';return;}
   err.textContent='';
   D.products.push({
@@ -8472,7 +8988,7 @@ function saveInlineVendor(){
   const err=document.getElementById('ivm-err');
   err.textContent='';
   if(!name){err.textContent='નામ જરૂરી';return;}
-  if(!phone||!/^\d{10}$/.test(phone)){err.textContent='10 digit Mobile જરૂરી';return;}
+  if(!phone||!/^\d{10}$/.test(phone)){err.textContent='⚠️ 10 અંકનો મોબાઈલ નંબર જરૂરી છે';return;}
   if(D.vendors.find(v=>v.phone===phone)){err.textContent='Mobile already exists';return;}
   const v={id:'v_'+Date.now(),name,phone,
     company:document.getElementById('ivm-company').value.trim(),
@@ -8501,6 +9017,11 @@ function openInlineProduct(targetSelectId){
   const catEl=document.getElementById('ipm-cat');
   if(catEl){
     if(targetSelectId==='p-product-sel') catEl.value='pesticide';
+    else if(targetSelectId==='plt-ql-product'){
+      // Set category based on current plantation quick log type
+      const isPest=_pltQuickLogType==='pesticide';
+      catEl.value=isPest?'pesticide':'fertiliser';
+    }
     else catEl.value='fertiliser';
   }
   document.getElementById('inline-product-modal').classList.add('open');
@@ -8509,7 +9030,7 @@ function openInlineProduct(targetSelectId){
 function saveInlineProduct(){
   const name=document.getElementById('ipm-name').value.trim();
   const err=document.getElementById('ipm-err');
-  if(!name){err.textContent='Product નામ જરૂરી';return;}
+  if(!name){err.textContent='⚠️ ઉત્પાદનનું નામ જરૂરી છે';return;}
   if(D.products.find(p=>p.name.toLowerCase()===name.toLowerCase())){err.textContent='Product already exists';return;}
   const prod={id:'prod_'+Date.now(),name,
     cat:document.getElementById('ipm-cat').value,
@@ -8529,15 +9050,14 @@ function saveInlineProduct(){
   if(targetId==='f-product-sel') onProductSelect();
   else if(targetId==='p-product-sel') onPesticideProductSelect();
   else if(targetId==='plt-ql-product'){
-    // Plantation quick log — refresh the dropdown and select new product
+    // Plantation quick log — rebuild dropdown with correct category and select new product
     const qlSel=document.getElementById('plt-ql-product');
     if(qlSel){
-      // Re-build options based on current log type
-      const qlt=_pltQuickLogType||'fertilisation';
-      const isPest=['pesticide','herbicide','fungicide'].includes(D.products.find(p=>p.id===prod.id)?.cat);
-      const opts=D.products.filter(p=>(isPest?['pesticide','herbicide','fungicide']:['fertiliser']).includes(p.cat)&&p.status!=='inactive')
+      const isPest=['pesticide','herbicide','fungicide'].includes(prod.cat);
+      const cats=isPest?['pesticide','herbicide','fungicide']:['fertiliser'];
+      const opts=D.products.filter(p=>cats.includes(p.cat)&&p.status!=='inactive')
         .map(p=>`<option value="${p.id}">${p.name}${p.company?' — '+p.company:''}</option>`).join('');
-      qlSel.innerHTML=`<option value="">-- ઉ. --</option>`+opts;
+      qlSel.innerHTML=`<option value="">-- ઉત્પાદન પસંદ કરો --</option>`+opts;
       qlSel.value=prod.id;
     }
   }
@@ -8562,19 +9082,77 @@ function openFileUpload(previewId){
 function handlePhotoFile(file,previewId){
   if(!file) return;
   const statusEl=document.getElementById(previewId.replace('preview','status'));
-  if(file.size>2*1024*1024){
-    if(statusEl) statusEl.textContent='⚠ File too large (max 2MB)';return;
+  if(file.size>5*1024*1024){
+    if(statusEl) statusEl.textContent='\u26A0 File too large (max 5MB)';return;
   }
   const reader=new FileReader();
   reader.onload=e=>{
     const dataId=previewId.replace('preview','data');
     const dataEl=document.getElementById(dataId);
     const prevEl=document.getElementById(previewId);
-    if(dataEl) dataEl.value=e.target.result;
-    if(prevEl){prevEl.src=e.target.result;prevEl.style.display='block';}
-    if(statusEl) statusEl.textContent='✅ '+file.name;
+    const img=new Image();
+    img.onload=()=>{
+      const MAX=1000;
+      let w=img.width,h=img.height;
+      let dataUrl=e.target.result;
+      if(w>MAX||h>MAX){
+        const r=Math.min(MAX/w,MAX/h); w=Math.round(w*r); h=Math.round(h*r);
+        const canvas=document.createElement('canvas');
+        canvas.width=w; canvas.height=h;
+        canvas.getContext('2d').drawImage(img,0,0,w,h);
+        dataUrl=canvas.toDataURL('image/jpeg',0.78);
+      }
+      if(dataEl) dataEl.value=dataUrl;
+      if(prevEl){prevEl.src=dataUrl;prevEl.style.display='block';}
+      if(statusEl) statusEl.textContent='\u2705 '+file.name;
+      // Hide placeholder emoji if present
+      const placeholderId=previewId.replace('preview','placeholder');
+      const ph=document.getElementById(placeholderId);
+      if(ph) ph.style.display='none';
+      // Show explicit delete button if present (new plantation photo layout)
+      const delBtnId=previewId.replace('preview','del');
+      const delBtn=document.getElementById(delBtnId);
+      if(delBtn) delBtn.style.display='block';
+      else _showPhotoDeleteBtn(previewId, dataId, statusEl);
+    };
+    img.src=e.target.result;
   };
   reader.readAsDataURL(file);
+}
+
+// Clear a plantation photo slot (used by explicit delete buttons)
+function clearPlantationPhoto(n){
+  const dataEl=document.getElementById('plt-photo'+n+'-data');
+  const prevEl=document.getElementById('plt-photo'+n+'-preview');
+  const statusEl=document.getElementById('plt-photo'+n+'-status');
+  const delBtn=document.getElementById('plt-photo'+n+'-del');
+  const ph=document.getElementById('plt-photo'+n+'-placeholder');
+  if(dataEl) dataEl.value='';
+  if(prevEl){prevEl.src='';prevEl.style.display='none';}
+  if(statusEl) statusEl.textContent='';
+  if(delBtn) delBtn.style.display='none';
+  if(ph) ph.style.display='';
+}
+
+// Inject a delete/replace button below the photo preview
+function _showPhotoDeleteBtn(previewId, dataId, statusEl){
+  const delBtnId='del-'+previewId;
+  if(document.getElementById(delBtnId)) return; // already added
+  const prevEl=document.getElementById(previewId);
+  if(!prevEl) return;
+  const btn=document.createElement('button');
+  btn.id=delBtnId;
+  btn.type='button';
+  btn.textContent='🗑 ફોટો દૂર કરો';
+  btn.style.cssText='margin-top:6px;padding:5px 12px;border-radius:var(--radius);border:1px solid var(--red);background:var(--red-light);color:var(--red-dark);font-size:11px;font-weight:600;cursor:pointer;display:block;';
+  btn.onclick=()=>{
+    const dataEl=document.getElementById(dataId);
+    if(dataEl) dataEl.value='';
+    if(prevEl){prevEl.src='';prevEl.style.display='none';}
+    if(statusEl) statusEl.textContent='';
+    btn.remove();
+  };
+  prevEl.insertAdjacentElement('afterend', btn);
 }
 
 // PAYMENT TOGGLE
@@ -9081,7 +9659,7 @@ function saveIrrSession(){
   const err=document.getElementById('irr-sess-err');
   err.textContent='';
   if(!date){err.textContent='Date ભરો';return;}
-  if(!area){err.textContent='Area ભરો';return;}
+  if(!area){err.textContent='⚠️ વિસ્તાર (વીઘા) ભરો';return;}
 
   const totalArea=parseFloat(document.getElementById('irr-modal-plt-area').value)||0;
   const pct=totalArea?parseFloat(((area/totalArea)*100).toFixed(1)):0;
@@ -9200,54 +9778,8 @@ function getProfileCompleteness(p){
   return Math.round((filled/fields.length)*100);
 }
 
-async function saveProfile(){
-  if(!currentUser){alert('Login જરૂરી');return;}
-  const err=document.getElementById('prof-err');
-  const name=document.getElementById('prof-name').value.trim();
-  if(!name){err.textContent='નામ ભરો';return;}
-  err.textContent='';
 
-  const crops=[...document.querySelectorAll('#prof-crops-picker input:checked')].map(c=>c.value);
-  const photoData=document.getElementById('prof-photo-data').value;
 
-  const updates={
-    name, village:document.getElementById('prof-village').value.trim(),
-    taluka:document.getElementById('prof-taluka').value.trim(),
-    district:document.getElementById('prof-district').value.trim(),
-    pincode:document.getElementById('prof-pincode').value.trim(),
-    state:document.getElementById('prof-state').value,
-    land:parseFloat(document.getElementById('prof-land').value)||0,
-    farmtype:document.getElementById('prof-farmtype').value,
-    language:document.getElementById('prof-lang').value,
-    crops, photo:photoData||currentUser.photo||''
-  };
-
-  try{
-    const {error}=await supa.from('profiles').update(updates).eq('id',currentUser.id);
-    if(error){err.textContent='Save failed: '+error.message;return;}
-  }catch(netErr){
-    err.textContent='❌ Network error — Internet ચેક કરો ('+(netErr.message||'unknown')+')';
-    return;
-  }
-  Object.assign(currentUser, updates);
-
-  // Update sidebar display
-  const sbName=document.getElementById('sb-user-name');
-  if(sbName) sbName.textContent='👤 '+name;
-
-  // Hide dashboard banner if complete
-  const pct=getProfileCompleteness(currentUser);
-  const dashBanner=document.getElementById('dash-profile-banner');
-  if(dashBanner) dashBanner.style.display=pct>=70?'none':'flex';
-
-  // Save session update
-  localStorage.setItem('sf_session',JSON.stringify({userId:currentUser.id,phone:currentUser.phone}));
-
-  err.style.color='var(--green-dark)';
-  err.textContent='✅ Profile saved successfully!';
-  setTimeout(()=>{err.textContent='';err.style.color='var(--red-dark)';},2500);
-  loadProfileForm();
-}
 
 function checkIncompletePlantationBanner(){
   const el=document.getElementById('dash-incomplete-plt-banner');
@@ -9989,8 +10521,8 @@ function renderAttendanceSheet(){
         ${hasInactive?`${inactiveWorkers.length} inactive workers છે — Activate કરો અથવા નવો ઉમેરો.`:'Labour Master માં worker ઉમેરો.'}
       </div>
       <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-        <button onclick="nav('labourmaster')" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;">+ નવો મ. ઉ.</button>
-        ${hasInactive?`<button onclick="nav('labourmaster')" style="background:var(--bg);color:var(--amber-dark);border:1.5px solid var(--amber);border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;">✓ સક્રિય કરો કરો</button>`:''}
+        <button onclick="nav('labourmaster')" style="background:var(--green);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;">+ નવો મજૂર ઉમેરો</button>
+        ${hasInactive?`<button onclick="nav('labourmaster')" style="background:var(--bg);color:var(--amber-dark);border:1.5px solid var(--amber);border-radius:8px;padding:10px 18px;font-size:13px;font-weight:600;cursor:pointer;">✓ સક્રિય કરો</button>`:''}
       </div>
     </div>`;
     return;
@@ -10013,20 +10545,20 @@ function renderAttendanceSheet(){
         <div style="display:flex;align-items:center;gap:8px;">
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:8px 14px;border-radius:8px;border:1.5px solid ${isP?'var(--green)':'var(--border2)'};background:${isP?'var(--green-light)':'var(--bg2)'};flex:1;justify-content:center;" id="lbl-p-${wid}">
             <input type="radio" name="att-status-${wid}" value="present" ${isP?'checked':''} onchange="updateAttCard('${wid}','${w.phone}')" style="accent-color:var(--green);width:15px;height:15px;"/>
-            <span style="font-size:13px;font-weight:700;color:${isP?'var(--green-dark)':'var(--text2)'};">હાજ.</span>
+            <span style="font-size:13px;font-weight:700;color:${isP?'var(--green-dark)':'var(--text2)'};">હાજર</span>
           </label>
           <label style="display:flex;align-items:center;gap:5px;cursor:pointer;padding:8px 14px;border-radius:8px;border:1.5px solid ${!isP?'var(--red)':'var(--border2)'};background:${!isP?'var(--red-light)':'var(--bg2)'};flex:1;justify-content:center;" id="lbl-a-${wid}">
             <input type="radio" name="att-status-${wid}" value="absent" ${!isP?'checked':''} onchange="updateAttCard('${wid}','${w.phone}')" style="accent-color:var(--red);width:15px;height:15px;"/>
-            <span style="font-size:13px;font-weight:700;color:${!isP?'var(--red-dark)':'var(--text2)'};">ગ.હ.</span>
+            <span style="font-size:13px;font-weight:700;color:${!isP?'var(--red-dark)':'var(--text2)'};">ગેરહાજર</span>
           </label>
           <div id="daytype-${wid}" style="display:${isP?'flex':'none'};gap:6px;flex:2;">
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid ${pD==='full'?'var(--blue)':'var(--border2)'};background:${pD==='full'?'var(--blue-light)':'var(--bg2)'};flex:1;justify-content:center;" id="lbl-f-${wid}">
               <input type="radio" name="att-day-${wid}" value="full" ${pD==='full'?'checked':''} onchange="updateDayCard('${wid}')" style="accent-color:var(--blue);width:15px;height:15px;"/>
-              <span style="font-size:12px;font-weight:700;color:${pD==='full'?'var(--blue-dark)':'var(--text2)'};">પૂ. ₹${w.rate||0}</span>
+              <span style="font-size:12px;font-weight:700;color:${pD==='full'?'var(--blue-dark)':'var(--text2)'};">પૂરો · ₹${w.rate||0}</span>
             </label>
             <label style="display:flex;align-items:center;gap:4px;cursor:pointer;padding:8px 10px;border-radius:8px;border:1.5px solid ${pD==='half'?'var(--amber)':'var(--border2)'};background:${pD==='half'?'var(--amber-light)':'var(--bg2)'};flex:1;justify-content:center;" id="lbl-h-${wid}">
               <input type="radio" name="att-day-${wid}" value="half" ${pD==='half'?'checked':''} onchange="updateDayCard('${wid}')" style="accent-color:var(--amber);width:15px;height:15px;"/>
-              <span style="font-size:12px;font-weight:700;color:${pD==='half'?'var(--amber-dark)':'var(--text2)'};">અ. ₹${Math.round((w.rate||0)/2)}</span>
+              <span style="font-size:12px;font-weight:700;color:${pD==='half'?'var(--amber-dark)':'var(--text2)'};">અડધો · ₹${Math.round((w.rate||0)/2)}</span>
             </label>
           </div>
         </div>
@@ -10064,6 +10596,55 @@ function updateDayCard(wid){
     lblH.style.background=day==='half'?'var(--amber-light)':'var(--bg2)';
     lblH.style.borderColor=day==='half'?'var(--amber)':'var(--border2)';
     lblH.querySelector('span').style.color=day==='half'?'var(--amber-dark)':'var(--text2)';
+  }
+}
+
+// ── BULK ATTENDANCE ───────────────────────────────────────────────
+// Mark all active workers present/absent/half in one tap
+function bulkAttendance(status, dayType){
+  const activeWorkers=D.workers.filter(w=>w.status==='active');
+  if(!activeWorkers.length) return;
+
+  // Check date is selected
+  const date=document.getElementById('att-date').value;
+  if(!date){
+    const attErr=document.getElementById('att-err');
+    if(attErr){attErr.textContent='⚠️ પ્રથમ તારીખ પસંદ કરો';attErr.style.display='block';setTimeout(()=>{attErr.style.display='none';},3000);}
+    return;
+  }
+
+  // Check attendance sheet is rendered
+  const sheet=document.getElementById('att-sheet');
+  if(!sheet||sheet.querySelector('.loading')) {
+    // Sheet not rendered yet — render it first then apply bulk
+    renderAttendanceSheet();
+  }
+
+  activeWorkers.forEach((w, wi)=>{
+    const wid='w'+wi;
+    // Set status radio
+    const statusRadio=document.querySelector(`input[name="att-status-${wid}"][value="${status}"]`);
+    if(statusRadio){
+      statusRadio.checked=true;
+      updateAttCard(wid, w.phone);
+    }
+    // Set day type radio if present
+    if(status==='present'){
+      const dayRadio=document.querySelector(`input[name="att-day-${wid}"][value="${dayType}"]`);
+      if(dayRadio){
+        dayRadio.checked=true;
+        updateDayCard(wid);
+      }
+    }
+  });
+
+  // Visual feedback — briefly highlight the sheet
+  if(sheet){
+    sheet.style.transition='background 0.3s';
+    sheet.style.background=status==='present'
+      ? (dayType==='half'?'var(--amber-light)':'var(--green-light)')
+      : 'var(--bg)';
+    setTimeout(()=>{sheet.style.background='';},600);
   }
 }
 
@@ -10144,9 +10725,12 @@ function saveAttendance(){
   if(selectedFL.length===0){
     const chipsEl=document.getElementById('att-farm-lane-chips');
     if(chipsEl){chipsEl.style.outline='2px solid var(--red)';chipsEl.style.outlineOffset='2px';setTimeout(()=>{chipsEl.style.outline='';chipsEl.style.outlineOffset='';},2500);}
-    alert('ઓ.ઓ. 1 ખેડ/લણણી પ. — ખેડ ન. પ. !');
+    const attErr=document.getElementById('att-err');
+    if(attErr){attErr.textContent='⚠️ ઓછામાં ઓછું 1 ખેતર અથવા લેન પસંદ કરો!';attErr.style.display='block';setTimeout(()=>{attErr.style.display='none';},4000);}
     return;
   }
+  const attErr=document.getElementById('att-err');
+  if(attErr) attErr.style.display='none';
   const farmLanes=selectedFL.map(k=>{const p=k.split('||');return{farm:p[0],lane:p[1]||''};});
   D.attendance=D.attendance.filter(a=>a.date!==date);
   activeWorkers.forEach((w,wi)=>{
@@ -10229,9 +10813,9 @@ function saveAttendance(){
       const rows = splitDetails.map(s =>
         `${s.farm}${s.lane?' / '+s.lane:''} (${s.area||'?'}વ. · ${s.pct}%) → ₹${s.amt.toLocaleString('en-IN')}`
       ).join('\n');
-      alert(`${date} ની હાજ. સ. — ${presentWorkers.length} હાજર · ₹${totalWage}\n\n${basisNote} વિ.:\n${rows}`);
+      alert(`${date} ની હાજરી સાચવી — ${presentWorkers.length} હાજર · ₹${totalWage}\n\n${basisNote}:\n${rows}`);
     } else {
-      alert(`${date} ની હાજ. સ. — ${presentWorkers.length} હાજર · ₹${totalWage}`);
+      alert(`${date} ની હાજરી સફળતાપૂર્વક સાચવી — ${presentWorkers.length} હાજર · ₹${totalWage}`);
     }
     return; // early return — saveData already called above
   }
@@ -10338,7 +10922,7 @@ function renderAttHistory(){
     const thead=tb.closest('table')?.querySelector('thead');
     if(thead) thead.style.display='';
     const stC={present:'bg',absent:'br'};
-    const stL={present:'હાજ.',absent:'ગેરહાજરહાજર'};
+    const stL={present:'હાજર',absent:'ગેરહાજર'};
     const dtC={full:'bb',half:'ba',absent:'br'};
     const dtL={full:'પૂ.',half:'½',absent:'—'};
     tb.innerHTML=logs.map(l=>{
@@ -10376,25 +10960,33 @@ function saveAdvance(){
   const reasonType=document.getElementById('adv-reason-type').value;
   const reasonErr=document.getElementById('adv-reason-err');
   reasonErr.textContent='';
-  if(!date||!workerPhone||!amt){alert('તારીખ, મજૂર અને રકમ જરૂરી');return;}
-  if(!reasonType){reasonErr.textContent='કારણ પ્રકાર પસંદ જરૂરી';return;}
-  let reasonLabel=({festival:'તહેવાર',medical:'તબીબી',house:'ઘર ખર્ચ',marriage:'લગ્ન/સા.',emergency:'આકસ્મિક',salary_advance:'પગાર એડ્વ.',other:''})[reasonType]||reasonType;
+  // Show inline error above save button
+  const advMainErr=document.getElementById('adv-main-err');
+  if(advMainErr) advMainErr.style.display='none';
+  const showMainErr=(msg)=>{
+    if(advMainErr){advMainErr.textContent=msg;advMainErr.style.display='block';setTimeout(()=>{advMainErr.style.display='none';},4000);}
+    if(savBtn) savBtn.disabled=false;
+  };
+  if(!date){showMainErr('⚠️ તારીખ ભરવી જરૂરી છે');return;}
+  if(!workerPhone){showMainErr('⚠️ મજૂર પસંદ કરવા જરૂરી છે');return;}
+  if(!amt){showMainErr('⚠️ રકમ ભરવી જરૂરી છે');return;}
+  if(!reasonType){reasonErr.textContent='⚠️ કારણ પસંદ કરવું જરૂરી છે';reasonErr.scrollIntoView({behavior:'smooth',block:'center'});if(savBtn)savBtn.disabled=false;return;}
+  let reasonLabel=({festival:'તહેવાર',medical:'તબીબી',house:'ઘર ખર્ચ',marriage:'લગ્ન / સામાજિક',emergency:'આકસ્મિક',salary_advance:'પગાર એડ્વાન્સ',other:''})[reasonType]||reasonType;
   if(reasonType==='other'){
     const custom=document.getElementById('adv-custom-reason').value.trim();
-    if(!custom){document.getElementById('adv-custom-reason-err').textContent='કારણ વર્ણન જરૂરી';return;}
+    if(!custom){document.getElementById('adv-custom-reason-err').textContent='⚠️ કારણનું વર્ણન લખવું જરૂરી છે';if(savBtn)savBtn.disabled=false;return;}
     reasonLabel=custom;
   }
   const worker=D.workers.find(w=>w.phone===workerPhone);
 
   // Duplicate guard — prevent double-save within 3 seconds
-  const dupKey = date+'|'+workerPhone+'|'+amt+'|'+type;
   const recent = D.advances.find(a=>
     a.date===date && a.workerPhone===workerPhone &&
     a.amt===amt && a.type===type
   );
   if(recent){
     const savedSecs = recent.addedOn ? (Date.now() - new Date(recent.addedOn+'T00:00:00').getTime())/1000 : 999;
-    if(savedSecs < 10){alert('આ નોંધ પહેલેથી સ. — ડ. ટ. અ.'); return;}
+    if(savedSecs < 10){showMainErr('⚠️ આ નોંધ પહેલેથી સાચવેલ છે — ડુપ્લિકેટ ટાળવા અટકાવ્યું.'); return;}
   }
 
   D.advances.unshift({module:"crop",date,workerPhone,workerName:worker?worker.name:'',amt,type,reasonType,reason:reasonLabel,note:document.getElementById('adv-note').value,addedOn:new Date().toISOString()});
@@ -10408,7 +11000,7 @@ function saveAdvance(){
     kind: type==='given' ? 'expense' : 'income',
     amount:amt,
     advType:type, // 'given' or 'received'
-    workerName:worker?https://url.uk.m.mimecastprotect.com/s/irGXCovPMUMEoz0jIzhJUptPsT?domain=worker.name'',
+    workerName:worker?worker.name:'',
     workerPhone,reason:reasonLabel,
     note:document.getElementById('adv-note').value,
     paystatus:'paid',
@@ -10602,12 +11194,12 @@ function saveCropStatus(){
   const date=document.getElementById('cs-date')?document.getElementById('cs-date').value:'';
   const stage=document.getElementById('cs-stage')?document.getElementById('cs-stage').value:'';
   const event=document.getElementById('cs-event')?document.getElementById('cs-event').value:'observation';
-  if(!pltId||!date||!stage){alert('વાવેતર, તારીખ અને તબક્કો જરૂરી');return;}
+  if(!pltId||!date||!stage){alert('⚠️ વાવેતર, તારીખ અને તબક્કો — ત્રણેય જરૂરી છે');return;}
   const plt=D.plantations.find(p=>p.id===pltId);
   D.cropStatusLogs.unshift({
     date, pltId, event,
     cropName:plt?plt.crop:'',
-    farm:plt?https://url.uk.m.mimecastprotect.com/s/IDVjCpRPNtGml8B1TYi8UGzdwX?domain=plt.farm'', lane:plt?plt.lane:'',
+    farm:plt?plt.farm:'', lane:plt?plt.lane:'',
     stage,
     health:document.getElementById('cs-health')?document.getElementById('cs-health').value:'',
     condition:document.getElementById('cs-problem')?document.getElementById('cs-problem').value:'',
@@ -10652,8 +11244,13 @@ function autoAnalyzeIfNeeded(){
 }
 
 async function runAIAnalysis(pltId){
+  if(!isOnline()){
+    const el=document.getElementById('ai-result-'+pltId)||document.getElementById('ai-result');
+    if(el) el.innerHTML='<div style="padding:12px;background:var(--amber-light);border-radius:var(--radius);color:var(--amber-dark);font-size:13px;">📵 AI વિશ્લેષણ માટે Internet જરૂરી છે. Online થઈ ફરી પ્રયાસ કરો.</div>';
+    return;
+  }
   const plt=D.plantations.find(p=>p.id===pltId);
-  if(!plt){alert('Plantation મળ્યું નહીં');return;}
+  if(!plt){alert('⚠️ વાવેતર મળ્યું નહીં — ફરી પ્રયાસ કરો');return;}
   const crop=D.crops.find(c=>c.name===plt.crop);
   const stageLogs=D.cropStatusLogs.filter(l=>l.pltId===pltId);
   const activities=D.activities.filter(a=>a.crop===pltId||a.crop===plt.crop);
@@ -10690,7 +11287,7 @@ async function runAIAnalysis(pltId){
         <strong>આ URL પર open કરો:</strong>
       </div>
       <div style="margin-top:8px;background:var(--bg);padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;color:var(--text);word-break:break-all;">
-        https://url.uk.m.mimecastprotect.com/s/L7FBCqV9OUDZ45oKHEsRUEBFqs?domain=parixitkosada-commits.github.io
+        https://parixitkosada-commits.github.io
       </div>
       <div style="margin-top:10px;font-size:12px;color:var(--text2);">
         💡 Chrome → address bar → URL paste → Enter
@@ -10783,7 +11380,7 @@ ${actContext||'કોઈ Activity નોંધ્યા નથી.'}
     const isOffline=!navigator.onLine;
     let errMsg;
     if(isOffline){
-      errMsg='📵 Internet નથી — online થઈ ફ. try કરો.';
+      errMsg='📵 Internet નથી — Online થઈ ફરી પ્રયાસ કરો.';
     } else {
       errMsg=err.message||'Unknown error';
     }
@@ -10798,14 +11395,39 @@ ${actContext||'કોઈ Activity નોંધ્યા નથી.'}
 async function fetchWeather(){
   const city=document.getElementById('w-city').value.trim();
   if(!city) return;
+  if(!isOnline()){
+    // Show cached weather if available
+    const cached=localStorage.getItem('sf_weather_cache');
+    if(cached){
+      try{
+        const {wr,fr,ts}=JSON.parse(cached);
+        renderWeatherCurrent(wr);
+        renderWeatherAdvice(wr);
+        renderWeatherForecast(fr);
+        const wEl=document.getElementById('w-current');
+        if(wEl){
+          const cachedNote=document.createElement('div');
+          cachedNote.style.cssText='font-size:11px;color:var(--amber-dark);padding:4px 8px;background:var(--amber-light);border-radius:4px;margin-top:6px;';
+          cachedNote.textContent='📵 Offline — '+ts+' ની cache બતાવ્યું';
+          wEl.appendChild(cachedNote);
+        }
+        return;
+      }catch(e){}
+    }
+    document.getElementById('w-current').innerHTML='<div style="padding:12px;background:var(--amber-light);border-radius:var(--radius);color:var(--amber-dark);font-size:13px;">📵 હવામાન માટે Internet જરૂરી છે</div>';
+    return;
+  }
   document.getElementById('w-current').innerHTML='<div class="loading">લોડ...</div>';
   try{
     const key='bd5e378503939ddaee76f12ad7a97608';
     const [wr,fr]=await Promise.all([
-      fetch(`https://url.uk.m.mimecastprotect.com/s/fhpMCrE6PtpENvGPtjt0U4Qv5R?domain=api.openweathermap.org`).then(r=>r.json()),
-      fetch(`https://url.uk.m.mimecastprotect.com/s/PJazCvYkWSGxB63pT5uoUQJVv4?domain=api.openweathermap.org`).then(r=>r.json())
+      fetch(`https://api.openweathermap.org/data/2.5/weather?q=${encodeURIComponent(city)}&appid=${key}&units=metric&lang=gu`).then(r=>r.json()),
+      fetch(`https://api.openweathermap.org/data/2.5/forecast?q=${encodeURIComponent(city)}&appid=${key}&units=metric&lang=gu&cnt=5`).then(r=>r.json())
     ]);
-    if(wr.cod!==200){document.getElementById('w-current').innerHTML='<div class="loading">શહેર મળ્યું નહીં — બ. ન. અન્ય</div>';return;}
+    if(wr.cod!==200){document.getElementById('w-current').innerHTML='<div class="loading">શહેર મળ્યું નહીં — બીજું નામ ટ્રાઈ કરો</div>';return;}
+    // Cache the weather data
+    const ts=new Date().toLocaleString('gu-IN',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    localStorage.setItem('sf_weather_cache',JSON.stringify({wr,fr,ts}));
     renderWeatherCurrent(wr);
     renderWeatherAdvice(wr);
     renderWeatherForecast(fr);
@@ -10818,7 +11440,7 @@ async function useGPS(){
     async pos=>{
       try{
         const key='bd5e378503939ddaee76f12ad7a97608';
-        const wr=await fetch(`https://url.uk.m.mimecastprotect.com/s/vAcSCwElXt7KO1WJcxCVUJ_w6V?domain=api.openweathermap.org`).then(r=>r.json());
+        const wr=await fetch(`https://api.openweathermap.org`).then(r=>r.json());
         document.getElementById('w-city').value=wr.name;
         fetchWeather();
       }catch(e){
@@ -11369,65 +11991,8 @@ function loadProfileForm(){
   if(dp) dp.textContent='+91 '+currentUser.phone;
 }
 
-async function saveProfile(){
-  const name=document.getElementById('prof-name').value.trim();
-  const err=document.getElementById('prof-err');
-  if(!name){err.textContent='નામ ભરો';return;}
-  err.textContent='';
 
-  // Photo data
-  const photoData=document.getElementById('profile-photo-data')?document.getElementById('profile-photo-data').value:'';
 
-  const updates={
-    name,
-    village:document.getElementById('prof-village').value,
-    taluka:document.getElementById('prof-taluka').value,
-    district:document.getElementById('prof-district').value,
-    state:document.getElementById('prof-state').value,
-    farm_name:document.getElementById('prof-farmname').value,
-    total_land:parseFloat(document.getElementById('prof-totalland').value)||0,
-    farm_type:document.getElementById('prof-farmtype').value,
-    main_crops:document.getElementById('prof-crops').value,
-    language:document.getElementById('prof-language').value,
-    photo_data:photoData||currentUser.photo_data||''
-  };
-
-  // Update Supabase
-  try{
-    const {error}=await supa.from('profiles').update(updates).eq('id',currentUser.id);
-    if(error){err.textContent='Save failed: '+error.message;return;}
-  }catch(netErr){
-    err.textContent='❌ Network error — Internet ચેક કરો ('+(netErr.message||'unknown')+')';
-    return;
-  }
-
-  // Update local currentUser
-  Object.assign(currentUser,updates);
-  localStorage.setItem('sf_session',JSON.stringify({userId:currentUser.id,phone:currentUser.phone}));
-
-  // Update sidebar display
-  const sbName=document.getElementById('sb-user-name');
-  if(sbName) sbName.textContent='👤 '+currentUser.name;
-
-  // Update photo circle
-  if(photoData){
-    const prev=document.getElementById('profile-photo-preview');
-    const icon=document.getElementById('profile-photo-icon');
-    if(prev){prev.src=photoData;prev.style.display='block';}
-    if(icon) icon.style.display='none';
-  }
-
-  // Update display name
-  const dn=document.getElementById('profile-display-name');
-  if(dn) dn.textContent=currentUser.name;
-
-  err.style.color='var(--green-dark)';
-  err.textContent='✅ Profile સાચવ્યો!';
-  setTimeout(()=>{ err.textContent=''; err.style.color='var(--red-dark)'; },3000);
-
-  // Refresh dashboard banner
-  renderDash();
-}
 
 // Handle photo upload for profile
 document.addEventListener('DOMContentLoaded',()=>{
@@ -11513,7 +12078,7 @@ function renderProfilePage(){
 }
 
 async function saveProfile(){
-  if(!currentUser){alert('Login જરૂરી');return;}
+  if(!currentUser){alert('⚠️ પ્રથમ Login કરો');return;}
   const name=document.getElementById('pf-name').value.trim();
   const err=document.getElementById('pf-err');
   if(!name){err.textContent='નામ ભરો';return;}
@@ -11543,7 +12108,7 @@ async function saveProfile(){
     const {error}=await supa.from('profiles').update(updates).eq('id',currentUser.id);
     if(error){err.textContent='Save failed: '+error.message;return;}
   }catch(netErr){
-    err.textContent='❌ Network error — Internet ચેક કરો ('+(netErr.message||'unknown')+')';
+    err.textContent='❌ નેટવર્ક ભૂલ — Internet ચેક કરો ('+(netErr.message||'unknown')+')';
     return;
   }
 
@@ -11561,7 +12126,7 @@ async function saveProfile(){
 
   checkProfileBanner();
   err.style.color='var(--green-dark)';
-  err.textContent='✅ Profile સાચવ્યું!';
+  err.textContent='✅ પ્રોફાઇલ સાચવ્યું!';
   setTimeout(()=>{err.textContent='';err.style.color='';},2500);
 }
 
@@ -11651,7 +12216,7 @@ async function loginWithPin(){
     if(loginMode==='signup'){
       // SIGNUP — must NOT already exist
       if(existing){
-        errEl.textContent='❌ આ number પહેલેથી પહેલેથી નોંધાયેલ છે છે. Login કરો.';
+        errEl.textContent='❌ આ નંબર પહેલેથી નોંધાયેલ છે. Login કરો.';
         statusEl.textContent='';
         return;
       }
@@ -11668,7 +12233,7 @@ async function loginWithPin(){
     } else {
       // LOGIN — must exist AND pin must match
       if(!existing){
-        errEl.textContent='❌ નંબર મળી આવ્યો નથી. પહેલા નોંધણી કરો (નોંધણી કરો (Sign Up)) કરો.';
+        errEl.textContent='❌ નંબર મળ્યો નથી. પ્રથમ નોંધણી (Sign Up) કરો.';
         statusEl.textContent='';
         pinBuffer=''; updatePinDots();
         return;
@@ -11688,7 +12253,7 @@ async function loginWithPin(){
   } catch(loginErr){
     console.error('loginWithPin error:', loginErr);
     statusEl.textContent='';
-    errEl.textContent='❌ Network error — Internet ચેક કરો અને ફ. try કરો. ('+(loginErr.message||'unknown')+')';
+    errEl.textContent='❌ નેટવર્ક ભૂલ — Internet ચેક કરો અને ફરી પ્રયાસ કરો. ('+(loginErr.message||'unknown')+')';
     pinBuffer=''; updatePinDots();
   }
 }
@@ -11704,12 +12269,13 @@ function finishLogin(){
   // Show sync button
   const syncBtn=document.getElementById('sync-status');
   if(syncBtn){syncBtn.style.display='block';syncBtn.textContent='☁️ સિંક (Sync)';}
-  localStorage.setItem('sf_session',JSON.stringify({userId:currentUser.id,phone:currentUser.phone}));
+  localStorage.setItem('sf_session',JSON.stringify({userId:currentUser.id,phone:currentUser.phone,cachedUser:currentUser}));
   setTimeout(()=>{
     document.getElementById('login-screen').style.display='none';
     renderDash();
     checkProfileBanner();
     initMobile();
+    initNotifications();
     setTimeout(()=>checkAndShowWizard(), 600);
     // Auto sync on login
     setTimeout(()=>syncAllToCloud(), 2000);
@@ -11995,6 +12561,7 @@ async function syncAllToCloud(){
 
 function debouncedCloudSync(){
   if(!currentUser) return;
+  if(!isOnline()){ console.log('Offline — sync queued for when online'); return; }
   clearTimeout(syncTimer);
   syncTimer=setTimeout(syncAllToCloud,2000);
 }
@@ -12020,22 +12587,322 @@ async function tryAutoLogin(){
   const session=localStorage.getItem('sf_session');
   if(!session) return;
   try{
-    const {userId}=JSON.parse(session);
+    const {userId,phone,cachedUser}=JSON.parse(session);
+
+    // ── OFFLINE MODE: use cached user profile ──────────────────────
+    if(!isOnline()){
+      if(cachedUser){
+        currentUser=cachedUser;
+        _finishLoginUI(cachedUser);
+        console.log('Offline auto-login using cached profile');
+        return;
+      }
+      // No cached user — can't login offline
+      console.warn('Offline and no cached user — showing login screen');
+      return;
+    }
+
+    // ── ONLINE MODE: verify with Supabase ─────────────────────────
     const {data:user}=await supa.from('profiles').select('*').eq('id',userId).maybeSingle();
     if(!user){localStorage.removeItem('sf_session');return;}
     currentUser=user;
-    const sbUser=document.getElementById('sb-user');
-    const sbName=document.getElementById('sb-user-name');
-    if(sbUser) sbUser.style.display='flex';
-    if(sbName) sbName.textContent='👤 '+(user.name||user.phone);
-    const logoutBtn=document.getElementById('mob-logout-btn');
-    if(logoutBtn) logoutBtn.style.display='flex';
-    const syncBtn2=document.getElementById('sync-status');
-    if(syncBtn2){syncBtn2.style.display='block';syncBtn2.textContent='☁️ સિંક (Sync)';}
-    document.getElementById('login-screen').style.display='none';
+    // Update cached user in session
+    localStorage.setItem('sf_session',JSON.stringify({userId:user.id,phone:user.phone,cachedUser:user}));
+    _finishLoginUI(user);
     await loadUserData();
-  } catch(e){ console.warn('Auto-login failed',e); }
+  } catch(e){
+    console.warn('Auto-login failed',e);
+    // Network error — try cached user
+    try{
+      const {cachedUser}=JSON.parse(session);
+      if(cachedUser){
+        currentUser=cachedUser;
+        _finishLoginUI(cachedUser);
+        console.log('Network error — using cached profile');
+      }
+    } catch(e2){}
+  }
 }
+
+function _finishLoginUI(user){
+  const sbUser=document.getElementById('sb-user');
+  const sbName=document.getElementById('sb-user-name');
+  if(sbUser) sbUser.style.display='flex';
+  if(sbName) sbName.textContent='\uD83D\uDC64 '+(user.name||user.phone);
+  const logoutBtn=document.getElementById('mob-logout-btn');
+  if(logoutBtn) logoutBtn.style.display='flex';
+  const syncBtn2=document.getElementById('sync-status');
+  if(syncBtn2){syncBtn2.style.display='block';syncBtn2.textContent='\u2601\uFE0F \u0AB8\u0ABF\u0A82\u0A95 (Sync)';}
+  document.getElementById('login-screen').style.display='none';
+  setTimeout(()=>initNotifications(), 1000);
+}
+
+// ── PUSH NOTIFICATION ENGINE ─────────────────────────────────────
+const NOTIF_KEY = 'sf_notif_prefs';
+
+function getNotifPrefs(){
+  try{ return JSON.parse(localStorage.getItem(NOTIF_KEY)||'{}'); }
+  catch(e){ return {}; }
+}
+function saveNotifPrefs(prefs){ localStorage.setItem(NOTIF_KEY, JSON.stringify(prefs)); }
+
+function loadNotifPrefsUI(){
+  const prefs = getNotifPrefs();
+  const masterEl = document.getElementById('notif-master-toggle');
+  if(!masterEl) return;
+  const enabled = !!(prefs.enabled && typeof Notification!=='undefined' && Notification.permission==='granted');
+  masterEl.checked = enabled;
+  _updateToggleUI(enabled);
+  const ids = ['irrigation','harvest','payment','activity','stage','lifecycle','health'];
+  ids.forEach(id=>{ const el=document.getElementById('notif-'+id); if(el) el.checked=prefs[id]!==false; });
+  const sub=document.getElementById('notif-sub-settings');
+  if(sub) sub.style.display=enabled?'block':'none';
+}
+
+function _updateToggleUI(on){
+  const track=document.getElementById('notif-toggle-track');
+  const thumb=document.getElementById('notif-toggle-thumb');
+  if(track) track.style.background=on?'var(--green)':'var(--border2)';
+  if(thumb) thumb.style.transform=on?'translateX(20px)':'translateX(0)';
+}
+
+async function handleNotifToggle(checked){
+  const statusEl=document.getElementById('notif-status-msg');
+  const sub=document.getElementById('notif-sub-settings');
+  if(!checked){
+    saveNotifPrefs({...getNotifPrefs(),enabled:false});
+    _updateToggleUI(false);
+    if(sub) sub.style.display='none';
+    if(statusEl) statusEl.textContent='\u0AB8\u0AC2\u0A9A\u0AA8\u0ABE\u0D8B \u0AAC\u0A82\u0AA7 \u0A95\u0AB0\u0AC0.';
+    return;
+  }
+  if(typeof Notification==='undefined'){
+    if(statusEl) statusEl.textContent='\u26A0\uFE0F \u0A86 browser notifications \u0AB8\u0AAA\u0ACB\u0AB0\u0ACD\u0A9F \u0AA8\u0AA5\u0AC0 \u0A95\u0AB0\u0AA4\u0AC1\u0A82.';
+    document.getElementById('notif-master-toggle').checked=false; _updateToggleUI(false); return;
+  }
+  const perm=await Notification.requestPermission();
+  if(perm==='granted'){
+    saveNotifPrefs({...getNotifPrefs(),enabled:true,irrigation:true,harvest:true,payment:true,activity:true});
+    _updateToggleUI(true);
+    if(sub) sub.style.display='block';
+    if(statusEl) statusEl.textContent='\u2705 \u0AB8\u0AC2\u0A9A\u0AA8\u0ABE\u0D8B \u0A9A\u0ABE\u0AB2\u0AC1 \u2014 \u0AB0\u0ACB\u0A9C \u0AB8\u0AB5\u0ABE\u0AB0\u0AC7 8 \u0AB5\u0ABE\u0A97\u0ACD\u0AAF\u0AC7 \u0AAE\u0AB3\u0AB6\u0AC7.';
+    scheduleNextMorningCheck();
+  } else if(perm==='denied'){
+    document.getElementById('notif-master-toggle').checked=false; _updateToggleUI(false);
+    if(statusEl) statusEl.textContent='\u26D4 Browser\u0AC7 \u0A85\u0A9F\u0A95\u0ABE\u0AB5\u0AC0 \u2014 \u0AAC\u0ACD\u0AB0\u0ABE\u0D82\u0AB8\u0AC7\u0AB0 Settings\u0AAE\u0ABE\u0A82 Notifications \u0A9A\u0ABE\u0AB2\u0AC1 \u0A95\u0AB0\u0ACB.';
+  } else {
+    document.getElementById('notif-master-toggle').checked=false; _updateToggleUI(false);
+    if(statusEl) statusEl.textContent='\u0A85\u0A82\u0A9C\u0ABE\u0AAE \u0AB0\u0AB9\u0AC0 \u2014 \u0AAB\u0AB0\u0AC0 \u0AAA\u0ACD\u0AB0\u0AAF\u0ABE\u0AB8 \u0A95\u0AB0\u0ACB.';
+  }
+}
+
+function saveNotifSubPref(key,val){ saveNotifPrefs({...getNotifPrefs(),[key]:val}); }
+
+function testNotification(){
+  if(typeof Notification==='undefined'||Notification.permission!=='granted'){
+    alert('\u26A0\uFE0F \u0AAA\u0AB9\u0AC7\u0AB2\u0ABE Notifications \u0A9A\u0ABE\u0AB2\u0AC1 \u0A95\u0AB0\u0ACB.'); return;
+  }
+  new Notification('\uD83C\uDF3E \u0AB5\u0AC8\u0A9C\u0ACD\u0A9E\u0ABE\u0AA8\u0ABF\u0A95 \u0A96\u0AC7\u0AA4\u0AC0',{
+    body:'\u2705 \u0AA4\u0AAE\u0ABE\u0AB0\u0AC0 \u0AB8\u0AC2\u0A9A\u0AA8\u0ABE\u0D8B \u0AB8\u0AB0\u0AB8 \u0A9A\u0ABE\u0AB2\u0AC7 \u0A9B\u0AC7! \u0AB0\u0ACB\u0A9C \u0AB8\u0AB5\u0ABE\u0AB0\u0AC7 8 \u0AB5\u0ABE\u0A97\u0ACD\u0AAF\u0AC7 \u0A96\u0AC7\u0AA4\u0AB0\u0AA8\u0AC0 \u0AB5\u0ABF\u0A97\u0AA4 \u0AAE\u0AB3\u0AB6\u0AC7.',
+    icon:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">\uD83C\uDF3E</text></svg>',
+    tag:'vk-test'
+  });
+}
+
+function buildNotifications(){
+  const prefs=getNotifPrefs();
+  if(!prefs.enabled||typeof Notification==='undefined'||Notification.permission!=='granted') return [];
+  const today=new Date();
+  const todayStr=today.toISOString().split('T')[0];
+  const tomorrowStr=new Date(today.getTime()+86400000).toISOString().split('T')[0];
+  const notes=[];
+
+  D.plantations.filter(p=>p.status==='active').forEach(plt=>{
+    // 1. IRRIGATION — overdue / today / tomorrow
+    if(prefs.irrigation!==false){
+      const schedule=typeof getIrrigationSchedule==='function'?getIrrigationSchedule(plt):[];
+      schedule.forEach(item=>{
+        const d=item.idealDate||item.date||'';
+        if(!d) return;
+        if(d===todayStr) notes.push({title:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4 \u0A86\u0A9C\u0AC7',body:`${plt.crop} (${plt.farm}) \u2014 ${item.name||'\u0AA8\u0AC0\u0AB0'} \u0A86\u0A9C\u0AC7 \u0A86\u0AAA\u0AB5\u0ABE\u0AA8\u0AC1\u0A82 \u0A9B\u0AC7`,tag:'irr-today-'+plt.id+'-'+d});
+        else if(d===tomorrowStr) notes.push({title:'\uD83D\uDCA7 \u0AAA\u0ABF\u0AAF\u0AA4 \u0A86\u0AB5\u0AA4\u0AC0\u0A95\u0ABE\u0AB2\u0AC7',body:`${plt.crop} (${plt.farm}) \u2014 \u0A86\u0AB5\u0AA4\u0AC0\u0A95\u0ABE\u0AB2\u0AC7 ${item.name||'\u0AA8\u0AC0\u0AB0'} \u0A86\u0AAA\u0AB5\u0ABE\u0AA8\u0AC1\u0A82 \u0A9B\u0AC7`,tag:'irr-tomorrow-'+plt.id+'-'+d});
+        else if(d<todayStr) notes.push({title:'\uD83D\uDEA8 \u0AAA\u0ABF\u0AAF\u0AA4 \u0AAE\u0ACB\u0AA1\u0AC1\u0A82',body:`${plt.crop} (${plt.farm}) \u2014 ${item.name||'\u0AA8\u0AC0\u0AB0'} ${d} \u0AA5\u0AC0 \u0AAC\u0ABE\u0A95\u0AC0`,tag:'irr-overdue-'+plt.id+'-'+d});
+      });
+    }
+    // 2. HARVEST within 14 days
+    if(prefs.harvest!==false&&plt.expectedHarvest){
+      const d=Math.round((new Date(plt.expectedHarvest)-today)/86400000);
+      if(d>=0&&d<=14) notes.push({title:'\uD83C\uDF3E \u0AB2\u0AA3\u0AA3\u0AC0 \u0AA8\u0A9C\u0AC0\u0A95',body:`${plt.crop} (${plt.farm}) \u2014 ${d===0?'\u0A86\u0A9C\u0AC7 \u0AB2\u0AA3\u0AA3\u0AC0':d+' \u0AA6\u0ABF\u0AB5\u0AB8\u0AAE\u0ABE\u0A82 \u0AB2\u0AA3\u0AA3\u0AC0'}`,tag:'harvest-'+plt.id});
+    }
+    // 3. PENDING PAYMENT 7+ days
+    if(prefs.payment!==false){
+      D.fieldLogs.filter(l=>l.pltId===plt.id&&(l.pending||0)>0&&l.type==='sale').forEach(l=>{
+        const days=l.date?Math.round((today-new Date(l.date))/86400000):0;
+        if(days>=7) notes.push({title:'\uD83D\uDCB0 \u0AA7\u0ABF\u0AB0\u0ABE\u0AB0\u0ABE\u0AA3 \u0AAC\u0ABE\u0A95\u0AC0',body:`${plt.crop} \u2014 \u20B9${(l.pending||0).toLocaleString('en-IN')} ${days}\u0AA6\u0ABF.\u0AA5\u0AC0 \u0AAC\u0ABE\u0A95\u0AC0`,tag:'payment-'+l.id});
+      });
+    }
+    // 4. OVERDUE ACTIVITY from alertEngine
+    if(prefs.activity!==false){
+      alertEngine().filter(a=>a.type==='activity'&&a.urgency==='danger'&&a.plt.id===plt.id)
+        .slice(0,2).forEach(a=>notes.push({title:'\uD83C\uDF31 \u0AAA\u0ACD\u0AB0\u0AB5\u0AC3\u0AA4\u0ACD\u0AA4\u0ABF \u0AAC\u0ABE\u0A95\u0AC0',body:a.msg,tag:'activity-'+plt.id+'-'+(a.act?.name||'')}));
+    }
+
+    // 5. STAGE CAPTURE REMINDER — ideal stage changed but not logged for 2+ days
+    if(prefs.stage!==false){
+      const si=getCurrentStageInfo(plt);
+      if(si&&!si.isLogged){
+        const daysSinceStageStart=si.daysSinceSow-si.cumDays;
+        if(daysSinceStageStart>=2){
+          // Stage has been due for 2+ days and still not logged
+          notes.push({
+            title:'\uD83D\uDCCB \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB \u0AA8\u0ACB\u0A82\u0AA7\u0ACB',
+            body:`${plt.crop} (${plt.farm}) \u2014 "${si.idealName}" \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB Day ${si.cumDays}\u0AA5\u0AC0 \u0AB6\u0AB0\u0AC2 \u0AA5\u0AAF\u0ACB \u0A9B\u0AC7, \u0A95\u0AC3\u0AAA\u0AAF\u0ABE \u0AA8\u0ACB\u0A82\u0AA7 \u0A95\u0AB0\u0ACD\u0AB5\u0ACB`,
+            tag:'stage-log-'+plt.id+'-'+si.idealIdx
+          });
+        } else if(daysSinceStageStart===1){
+          // Stage just started yesterday — gentle reminder
+          notes.push({
+            title:'\uD83C\uDF31 \u0AA8\u0AB5\u0ACB \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB \u0AB6\u0AB0\u0AC2',
+            body:`${plt.crop} (${plt.farm}) \u2014 "${si.idealName}" \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB \u0AB6\u0AB0\u0AC2 \u0AA5\u0AAF\u0ACB \u0A9B\u0AC7. App\u0AAE\u0ABE\u0A82 \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB \u0AA8\u0ACB\u0A82\u0AA7\u0ACB.`,
+            tag:'stage-new-'+plt.id+'-'+si.idealIdx
+          });
+        }
+      }
+    }
+
+    // 6. LIFECYCLE ACTIVITY DUE TOMORROW — advance warning for tomorrow's activities
+    if(prefs.lifecycle!==false){
+      const crop=D.crops.find(c=>c.name===plt.crop);
+      const stages=crop?.stages||[];
+      const sowDate=new Date(plt.sow);
+      const daysSinceSow=Math.round((today-sowDate)/86400000);
+      let cumDays=0;
+      stages.forEach(st=>{
+        const stName=typeof st==='string'?st:(st.name||'');
+        const stDays=typeof st==='string'?0:(st.days||0);
+        (st.activities||[]).forEach(act=>{
+          const dueDay=cumDays+(act.dayOffset||0);
+          const diff=daysSinceSow-dueDay; // positive = past due, negative = future
+          // Due tomorrow (diff === -1) — give advance notice
+          if(diff===-1){
+            const doneInLogs=D.fieldLogs.find(l=>
+              l.pltId===plt.id&&
+              Math.abs(Math.round((new Date(l.date)-sowDate)/86400000)-dueDay)<=5
+            );
+            if(!doneInLogs) notes.push({
+              title:'\uD83D\uDD14 \u0A86\u0AB5\u0AA4\u0AC0\u0A95\u0ABE\u0AB2\u0AC7 \u0A95\u0AB0\u0AB5\u0ABE\u0AA8\u0AC1\u0A82',
+              body:`${plt.crop}: "${act.name}" \u2014 \u0A86\u0AB5\u0AA4\u0AC0\u0A95\u0ABE\u0AB2\u0AC7 (${stName})${act.tip?' \uD83D\uDCA1 '+act.tip:''}`,
+              tag:'lifecycle-tomorrow-'+plt.id+'-'+dueDay
+            });
+          }
+          // Due today (diff === 0)
+          if(diff===0){
+            const doneInLogs=D.fieldLogs.find(l=>
+              l.pltId===plt.id&&
+              Math.abs(Math.round((new Date(l.date)-sowDate)/86400000)-dueDay)<=5
+            );
+            if(!doneInLogs) notes.push({
+              title:'\u26A1 \u0A86\u0A9C\u0AC7 \u0A95\u0AB0\u0AB5\u0ABE\u0AA8\u0AC1\u0A82',
+              body:`${plt.crop}: "${act.name}" \u2014 \u0A86\u0A9C\u0AC7 \u0A95\u0AB0\u0AB5\u0ABE\u0AA8\u0AC1\u0A82 \u0A9B\u0AC7 (${stName})${act.tip?' \uD83D\uDCA1 '+act.tip:''}`,
+              tag:'lifecycle-today-'+plt.id+'-'+dueDay
+            });
+          }
+        });
+        cumDays+=stDays;
+      });
+    }
+
+    // 7. WEEKLY HEALTH CHECK — no crop status log in 7+ days
+    if(prefs.health!==false){
+      const lastLog=D.cropStatusLogs
+        .filter(l=>l.pltId===plt.id)
+        .sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+      const lastLogDate=lastLog?new Date(lastLog.date):new Date(plt.sow);
+      const daysSinceLog=Math.round((today-lastLogDate)/86400000);
+      if(daysSinceLog>=7){
+        notes.push({
+          title:'\uD83E\uDE7A \u0AAA\u0ABE\u0A95 \u0AB8\u0ACD\u0AB5\u0ABE\u0AB8\u0ACD\u0AA5\u0ACD\u0AAF \u0AA8\u0ACB\u0A82\u0AA7\u0ACB',
+          body:`${plt.crop} (${plt.farm}) \u2014 ${daysSinceLog} \u0AA6\u0ABF\u0AB5\u0AB8\u0AA5\u0AC0 \u0A95\u0ACB\u0A88 \u0AA8\u0ACB\u0A82\u0AA7 \u0AA8\u0AA5\u0AC0. \u0AA6\u0AB0\u0A9C \u0A95\u0AB0\u0ACB: \u0AA4\u0AAC\u0A95\u0ACD\u0A95\u0ACB, \u0AA4\u0AA8\u0AA8\u0AB8\u0ABF\u0AAF\u0AA4, \u0AB8\u0AAE\u0AB8\u0ACD\u0AAF\u0ABE`,
+          tag:'health-'+plt.id+'-week'+Math.floor(daysSinceLog/7)
+        });
+      }
+    }
+
+  });
+  return notes;
+}
+
+function sendFarmNotifications(){
+  const prefs=getNotifPrefs();
+  if(!prefs.enabled||typeof Notification==='undefined'||Notification.permission!=='granted') return;
+  const notes=buildNotifications();
+  if(!notes.length) return;
+  const sentKey='sf_notif_sent_'+new Date().toISOString().split('T')[0];
+  let sentTags=[];
+  try{ sentTags=JSON.parse(localStorage.getItem(sentKey)||'[]'); }catch(e){}
+  let sent=0;
+  notes.forEach(n=>{
+    if(sentTags.includes(n.tag)) return;
+    try{
+      new Notification(n.title,{body:n.body,icon:'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">\uD83C\uDF3E</text></svg>',tag:n.tag,requireInteraction:false});
+      sentTags.push(n.tag); sent++;
+    }catch(e){ console.warn('Notification failed:',e); }
+  });
+  if(sent>0) localStorage.setItem(sentKey,JSON.stringify(sentTags));
+  Object.keys(localStorage).filter(k=>k.startsWith('sf_notif_sent_')&&k!==sentKey).forEach(k=>localStorage.removeItem(k));
+}
+
+function scheduleNextMorningCheck(){
+  const prefs=getNotifPrefs();
+  if(!prefs.enabled||typeof Notification==='undefined'||Notification.permission!=='granted') return;
+  const now=new Date();
+  const next8=new Date(now); next8.setHours(8,0,0,0);
+  if(now>=next8) next8.setDate(next8.getDate()+1);
+  const ms=next8-now;
+  console.log('\uD83D\uDD14 Next notification in',Math.round(ms/60000),'min');
+  setTimeout(()=>{ sendFarmNotifications(); scheduleNextMorningCheck(); },ms);
+}
+
+function initNotifications(){
+  loadNotifPrefsUI();
+  const prefs=getNotifPrefs();
+  if(prefs.enabled&&typeof Notification!=='undefined'&&Notification.permission==='granted'){
+    if(new Date().getHours()>=8) sendFarmNotifications();
+    scheduleNextMorningCheck();
+  }
+}
+
+// ── OFFLINE DETECTION ─────────────────────────────────────────────
+function isOnline(){ return navigator.onLine; }
+
+function updateOfflineBanner(){
+  const banner=document.getElementById('offline-banner');
+  if(!banner) return;
+  if(!isOnline()){
+    banner.style.display='block';
+    // Push content down so banner doesn't cover header
+    const mainContent=document.getElementById('main-content');
+    const mobHeader=document.getElementById('mob-header');
+    if(mainContent) mainContent.style.marginTop='36px';
+    if(mobHeader) mobHeader.style.marginTop='36px';
+  } else {
+    banner.style.display='none';
+    const mainContent=document.getElementById('main-content');
+    const mobHeader=document.getElementById('mob-header');
+    if(mainContent) mainContent.style.marginTop='';
+    if(mobHeader) mobHeader.style.marginTop='';
+    // Back online — sync if dirty
+    if(currentUser && isDirty()){
+      console.log('Back online → syncing dirty data');
+      setTimeout(()=>syncAllToCloud(), 1000);
+    }
+  }
+}
+
+window.addEventListener('online',  updateOfflineBanner);
+window.addEventListener('offline', updateOfflineBanner);
+// Check on load
+document.addEventListener('DOMContentLoaded', updateOfflineBanner);
 
 tryAutoLogin();
 
